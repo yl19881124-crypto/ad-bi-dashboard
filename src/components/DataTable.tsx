@@ -1,19 +1,28 @@
 import { Table } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import type { AdDataRow } from '../types';
+import type { DataRow } from '../types';
 
 interface DataTableProps {
-  rows: AdDataRow[];
+  rows: DataRow[];
 }
 
-const columns: ColumnsType<AdDataRow> = [
-  { title: '日期', dataIndex: '日期', key: '日期' },
-  { title: '版位', dataIndex: '版位', key: '版位' },
-  { title: '当日付费人数', dataIndex: '当日付费人数', key: '当日付费人数' },
-  { title: '展示量', dataIndex: '展示量', key: '展示量' },
-  { title: '点击量', dataIndex: '点击量', key: '点击量' },
-];
-
 export default function DataTable({ rows }: DataTableProps) {
-  return <Table<AdDataRow> rowKey={(record: AdDataRow) => `${record.日期}-${record.版位}`} columns={columns} dataSource={rows} pagination={false} />;
+  const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
+
+  const columns: ColumnsType<DataRow> = headers.map((header) => ({
+    title: header,
+    dataIndex: header,
+    key: header,
+    render: (value: string | number | null) => (value === null || value === '' ? '-' : String(value)),
+  }));
+
+  return (
+    <Table<DataRow>
+      rowKey={(_record: DataRow, index?: number) => String(index ?? 0)}
+      columns={columns}
+      dataSource={rows}
+      pagination={false}
+      scroll={{ x: 'max-content' }}
+    />
+  );
 }
