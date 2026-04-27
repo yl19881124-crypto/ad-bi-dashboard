@@ -1,4 +1,4 @@
-import { Card, DatePicker, Select, Space, Input } from 'antd';
+import { Card, DatePicker, Input, Select, Space } from 'antd';
 import dayjs, { Dayjs } from 'dayjs';
 import type { DimensionField, MetricField } from '../types';
 
@@ -7,29 +7,45 @@ const { RangePicker } = DatePicker;
 interface ConfigBarProps {
   dimensions: DimensionField[];
   metrics: MetricField[];
+  selectedDimension: string;
+  selectedMetric: string;
+  selectedDateRange: [Dayjs, Dayjs] | null;
+  onDimensionChange: (value: string) => void;
+  onMetricChange: (value: string) => void;
+  onDateRangeChange: (value: [Dayjs, Dayjs] | null) => void;
 }
 
 const defaultRange: [Dayjs, Dayjs] = [dayjs('2026-04-20'), dayjs('2026-04-26')];
 
-export default function ConfigBar({ dimensions, metrics }: ConfigBarProps) {
+export default function ConfigBar({
+  dimensions,
+  metrics,
+  selectedDimension,
+  selectedMetric,
+  selectedDateRange,
+  onDimensionChange,
+  onMetricChange,
+  onDateRangeChange,
+}: ConfigBarProps) {
   return (
     <Card bordered={false}>
       <Space wrap size="middle">
-        <RangePicker defaultValue={defaultRange} />
+        <RangePicker value={selectedDateRange ?? defaultRange} onChange={(value) => onDateRangeChange(value as [Dayjs, Dayjs] | null)} />
         <Select
-          defaultValue="版位"
+          value={selectedDimension}
           style={{ width: 160 }}
           options={dimensions.map((item) => ({ value: item.key, label: item.name }))}
           placeholder="维度选择"
+          onChange={onDimensionChange}
         />
         <Select
-          mode="multiple"
-          defaultValue={['当日付费人数']}
+          value={selectedMetric}
           style={{ width: 260 }}
           options={metrics.map((item) => ({ value: item.key, label: item.name }))}
           placeholder="指标选择"
+          onChange={onMetricChange}
         />
-        <Input placeholder="筛选条件（示例：渠道=抖音）" style={{ width: 240 }} />
+        <Input placeholder="筛选条件（示例：渠道=抖音）" style={{ width: 240 }} disabled />
       </Space>
     </Card>
   );
