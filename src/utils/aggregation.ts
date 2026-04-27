@@ -2,6 +2,7 @@ import dayjs, { Dayjs } from 'dayjs';
 import type { MetricConfig } from '../config/metricConfig';
 import { getMetricType, metricConfigMap } from '../config/metricConfig';
 import type { DataRow } from '../types';
+import { normalizeExcelDate } from './date';
 
 export interface AggregatedRow {
   日期: string;
@@ -41,13 +42,13 @@ function toNumber(value: unknown): number {
 }
 
 function normalizeDate(dateValue: unknown): string {
-  if (typeof dateValue === 'string') {
-    const parsed = dayjs(dateValue);
-    return parsed.isValid() ? parsed.format('YYYY-MM-DD') : dateValue;
+  const normalized = normalizeExcelDate(dateValue);
+  if (normalized) {
+    return normalized;
   }
 
-  if (typeof dateValue === 'number') {
-    return String(dateValue);
+  if (typeof dateValue === 'string') {
+    return dateValue.trim() || '-';
   }
 
   return '-';
