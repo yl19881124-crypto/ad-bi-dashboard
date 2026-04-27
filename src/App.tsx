@@ -14,6 +14,7 @@ import { T0_METRIC_CONFIGS, T0_METRIC_KEYS, getMetricType } from './config/metri
 import { dimensionFields as defaultDimensions, metricFields as defaultMetrics, mockRows } from './mock/data';
 import type { DataRow, DimensionField, MetricField } from './types';
 import { aggregateRowsByDateAndDimension } from './utils/aggregation';
+import { normalizeExcelDate } from './utils/date';
 
 const { Header, Sider, Content } = Layout;
 const DEFAULT_SHEET_NAME = '分账户底表';
@@ -71,36 +72,9 @@ function normalizeDateValue(value: unknown): string | number | null {
     return null;
   }
 
-  if (value instanceof Date) {
-    return value.toISOString().slice(0, 10);
-  }
-
-  if (typeof value === 'number') {
-    const parsed = XLSX.SSF.parse_date_code(value);
-    if (parsed) {
-      return `${String(parsed.y).padStart(4, '0')}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
-    }
-  }
-
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return null;
-    }
-
-    if (isNumericValue(trimmed)) {
-      const parsed = XLSX.SSF.parse_date_code(Number(trimmed));
-      if (parsed) {
-        return `${String(parsed.y).padStart(4, '0')}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
-      }
-    }
-
-    const asDate = new Date(trimmed);
-    if (!Number.isNaN(asDate.getTime())) {
-      return asDate.toISOString().slice(0, 10);
-    }
-
-    return trimmed;
+  const normalized = normalizeExcelDate(value);
+  if (normalized) {
+    return normalized;
   }
 
   return String(value);
