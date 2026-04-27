@@ -1,15 +1,19 @@
 import { useMemo, useState } from 'react';
-import { Button, Card, Collapse, Descriptions, Layout, Space, Tag, Typography, Upload, message } from 'antd';
+import { Alert, Button, Card, Descriptions, Empty, Layout, Space, Typography, Upload, message } from 'antd';
 import type { UploadProps } from 'antd';
 import type { RcFile } from 'antd/es/upload';
+import type { Dayjs } from 'dayjs';
+import dayjs from 'dayjs';
 import { UploadOutlined } from '@ant-design/icons';
 import * as XLSX from 'xlsx';
 import ConfigBar from './components/ConfigBar';
 import DataTable from './components/DataTable';
 import FieldPanel from './components/FieldPanel';
 import TrendChart from './components/TrendChart';
+import { T0_METRIC_CONFIGS, T0_METRIC_KEYS, getMetricType } from './config/metricConfig';
 import { dimensionFields as defaultDimensions, metricFields as defaultMetrics, mockRows } from './mock/data';
 import type { DataRow, DimensionField, MetricField } from './types';
+import { aggregateRowsByDateAndDimension } from './utils/aggregation';
 
 const { Header, Sider, Content } = Layout;
 const DEFAULT_SHEET_NAME = '分账户底表';
@@ -27,22 +31,6 @@ const FIXED_DIMENSION_FIELDS = [
   '账户名称',
   '广告组ID',
   '广告组名称',
-];
-
-const T0_METRIC_NAMES = [
-  '落地页到达率',
-  '登陆➡️直播间进入率',
-  '落地页➡️直播间进入率',
-  '登陆➡️当日连麦率',
-  '直播间➡️当日连麦率',
-  '当日连麦➡️付费连麦转化率',
-  '当日付费连麦用户占比',
-  '当日付费人数',
-  '当日付费成本',
-  '当日付费ROI',
-  '3日付费成本',
-  '3日付费ROI',
-  '3日付费率',
 ];
 
 const dateNamePattern = /(日期|时间|date|day)/i;
@@ -201,13 +189,34 @@ function parseWorksheet(file: RcFile) {
   });
 }
 
+function buildMetricFields(parsedMetrics: string[]): MetricField[] {
+  const t0Metrics: MetricField[] = T0_METRIC_CONFIGS.map((metric) => ({
+    key: metric.key,
+    name: metric.name,
+    tag: 'T0',
+  }));
+
+  const t1Metrics: MetricField[] = parsedMetrics
+    .filter((field) => !T0_METRIC_KEYS.has(field))
+    .map((field) => ({
+      key: field,
+      name: field,
+      tag: 'T1',
+    }));
+
+  return [...t0Metrics, ...t1Metrics];
+}
+
 export default function App() {
-  const [rows, setRows] = useState<DataRow[]>(
-    mockRows.map((row) => ({ ...row })) as DataRow[],
-  );
+  const [rows, setRows] = useState<DataRow[]>(mockRows.map((row) => ({ ...row })));
   const [dimensionFields, setDimensionFields] = useState<DimensionField[]>(defaultDimensions);
   const [metricFields, setMetricFields] = useState<MetricField[]>(defaultMetrics);
   const [parsedSheetName, setParsedSheetName] = useState(DEFAULT_SHEET_NAME);
+  const [hasUploadedData, setHasUploadedData] = useState(false);
+
+  const [selectedDimension, setSelectedDimension] = useState('版位');
+  const [selectedMetric, setSelectedMetric] = useState('当日付费人数');
+  const [selectedDateRange, setSelectedDateRange] = useState<[Dayjs, Dayjs] | null>([dayjs('2026-04-20'), dayjs('2026-04-26')]);
 
   const uploadProps: UploadProps = useMemo(
     () => ({
@@ -217,22 +226,26 @@ export default function App() {
         try {
           const parsed = await parseWorksheet(file);
 
+          const parsedDimensions = parsed.dimensions.map((field: string) => ({
+            key: field,
+            name: field,
+            isDate: field === '日期',
+          }));
+
+          const parsedMetrics = buildMetricFields(parsed.metrics);
+
           setRows(parsed.rows);
+          setHasUploadedData(true);
           setParsedSheetName(parsed.sheetName);
-          setDimensionFields(
-            parsed.dimensions.map((field: string) => ({
-              key: field,
-              name: field,
-              isDate: field === '日期',
-            })),
-          );
-          setMetricFields(
-            parsed.metrics.map((field: string) => ({
-              key: field,
-              name: field,
-              tag: T0_METRIC_NAMES.includes(field) ? 'T0' : 'T1',
-            })),
-          );
+          setDimensionFields(parsedDimensions);
+          setMetricFields(parsedMetrics);
+
+          if (!parsedDimensions.some((item) => item.key === selectedDimension)) {
+            setSelectedDimension(parsedDimensions.find((item) => item.key !== '日期')?.key ?? '日期');
+          }
+          if (!parsedMetrics.some((item) => item.key === selectedMetric)) {
+            setSelectedMetric(parsedMetrics[0]?.key ?? '当日付费人数');
+          }
 
           message.success(`读取成功：${file.name}（${parsed.rows.length} 行，${parsed.dimensions.length + parsed.metrics.length} 列）。`);
         } catch (error) {
@@ -241,8 +254,16 @@ export default function App() {
         return false;
       },
     }),
-    [],
+    [selectedDimension, selectedMetric],
   );
+
+  const aggregatedResult = useMemo(
+    () => aggregateRowsByDateAndDimension({ rows, splitDimension: selectedDimension, metricKey: selectedMetric, dateRange: selectedDateRange }),
+    [rows, selectedDimension, selectedMetric, selectedDateRange],
+  );
+
+  const currentMetricType = getMetricType(selectedMetric);
+  const emptyText = '暂无数据，请调整筛选条件';
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
@@ -266,10 +287,44 @@ export default function App() {
 
         <Content style={{ padding: 16 }}>
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            <ConfigBar dimensions={dimensionFields} metrics={metricFields} />
+            <ConfigBar
+              dimensions={dimensionFields.filter((item) => item.key !== '日期')}
+              metrics={metricFields}
+              selectedDimension={selectedDimension}
+              selectedMetric={selectedMetric}
+              selectedDateRange={selectedDateRange}
+              onDimensionChange={setSelectedDimension}
+              onMetricChange={setSelectedMetric}
+              onDateRangeChange={setSelectedDateRange}
+            />
 
-            <Card title="趋势图（默认：折线图 / X轴：日期 / 拆分维度：版位 / 指标：当日付费人数）" bordered={false}>
-              <TrendChart rows={mockRows} />
+            <Card title={`趋势图（折线图 / X轴：日期 / 拆分维度：${selectedDimension} / 指标：${selectedMetric}）`} bordered={false}>
+              {!hasUploadedData && <Alert type="info" showIcon message="当前展示 mock 数据，上传 Excel 后将自动切换真实数据。" style={{ marginBottom: 12 }} />}
+              {aggregatedResult.rows.length > 0 ? (
+                <TrendChart
+                  rows={aggregatedResult.rows}
+                  dates={aggregatedResult.dates}
+                  series={aggregatedResult.series}
+                  splitDimensionLabel={selectedDimension}
+                  metricLabel={selectedMetric}
+                  metricType={currentMetricType}
+                />
+              ) : (
+                <Empty description={emptyText} />
+              )}
+            </Card>
+
+            <Card title={`明细表（聚合后：日期 + ${selectedDimension} + ${selectedMetric}）`} bordered={false}>
+              {aggregatedResult.rows.length > 0 ? (
+                <DataTable
+                  rows={aggregatedResult.rows}
+                  splitDimensionLabel={selectedDimension}
+                  metricLabel={selectedMetric}
+                  metricType={currentMetricType}
+                />
+              ) : (
+                <Empty description={emptyText} />
+              )}
             </Card>
 
             <Card title="上传解析结果" bordered={false}>
@@ -278,46 +333,6 @@ export default function App() {
                 <Descriptions.Item label="总字段数">{dimensionFields.length + metricFields.length}</Descriptions.Item>
                 <Descriptions.Item label="当前 Sheet">{parsedSheetName}</Descriptions.Item>
               </Descriptions>
-
-              <Collapse
-                style={{ marginTop: 16 }}
-                bordered={false}
-                items={[
-                  {
-                    key: 'recognized-details',
-                    label: '查看识别详情',
-                    children: (
-                      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                        <section>
-                          <Typography.Title level={5}>识别出的维度字段</Typography.Title>
-                          <Space wrap>
-                            {dimensionFields.map((item) => (
-                              <Tag key={item.key} color="blue">
-                                {item.name}
-                              </Tag>
-                            ))}
-                          </Space>
-                        </section>
-                        <section>
-                          <Typography.Title level={5}>识别出的指标字段</Typography.Title>
-                          <Space wrap>
-                            {metricFields.map((item) => (
-                              <Space key={item.key} size={6}>
-                                <Tag>{item.name}</Tag>
-                                <Tag color={item.tag === 'T0' ? 'blue' : 'default'}>{item.tag}</Tag>
-                              </Space>
-                            ))}
-                          </Space>
-                        </section>
-                      </Space>
-                    ),
-                  },
-                ]}
-              />
-            </Card>
-
-            <Card title="数据预览（前 20 行）" bordered={false}>
-              <DataTable rows={rows.slice(0, 20)} />
             </Card>
           </Space>
         </Content>
