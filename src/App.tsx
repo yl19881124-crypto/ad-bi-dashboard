@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Button, Card, Descriptions, Layout, message, Space, Typography, Upload } from 'antd';
+import { Button, Card, Collapse, Descriptions, Layout, Space, Tag, Typography, Upload, message } from 'antd';
 import type { UploadProps } from 'antd';
 import type { RcFile } from 'antd/es/upload';
 import { UploadOutlined } from '@ant-design/icons';
@@ -14,7 +14,56 @@ import type { DataRow, DimensionField, MetricField } from './types';
 const { Header, Sider, Content } = Layout;
 const DEFAULT_SHEET_NAME = '分账户底表';
 
+const FIXED_DIMENSION_FIELDS = [
+  '日期',
+  '代理',
+  '版位',
+  '优化目标',
+  '账户命名',
+  '出价方式',
+  '渠道',
+  '操作系统',
+  '账户ID',
+  '账户名称',
+  '广告组ID',
+  '广告组名称',
+];
+
+const T0_METRIC_NAMES = [
+  '落地页到达率',
+  '登陆➡️直播间进入率',
+  '落地页➡️直播间进入率',
+  '登陆➡️当日连麦率',
+  '直播间➡️当日连麦率',
+  '当日连麦➡️付费连麦转化率',
+  '当日付费连麦用户占比',
+  '当日付费人数',
+  '当日付费成本',
+  '当日付费ROI',
+  '3日付费成本',
+  '3日付费ROI',
+  '3日付费率',
+];
+
 const dateNamePattern = /(日期|时间|date|day)/i;
+const invalidFieldPattern = /^(字段\d+|未命名字段\d+|column\d+|col\d+|unnamed:?\s*\d*)$/i;
+
+function uniqList(list: string[]) {
+  return Array.from(new Set(list));
+}
+
+function isMeaninglessHeader(header: string) {
+  const normalized = header.trim();
+  if (!normalized) {
+    return true;
+  }
+
+  if (normalized === '-' || normalized === '--' || normalized === 'N/A' || normalized === 'NA') {
+    return true;
+  }
+
+  return invalidFieldPattern.test(normalized);
+}
 
 function isNumericValue(value: unknown) {
   if (typeof value === 'number') {
@@ -90,17 +139,17 @@ function parseWorksheet(file: RcFile) {
     });
 
     const [headerRow = [], ...bodyRows] = matrix;
-    const headers = headerRow.map((item: string | number | Date | null, index: number) => {
-      const text = String(item ?? '').trim();
-      return text || `未命名字段${index + 1}`;
-    });
+
+    const rawHeaders = headerRow.map((item: string | number | Date | null) => String(item ?? '').trim());
+    const validHeaders = uniqList(rawHeaders.filter((header: string) => !isMeaninglessHeader(header)));
 
     const rows: DataRow[] = bodyRows
       .map((row: (string | number | Date | null)[]) => {
         const mappedRow: DataRow = {};
 
-        headers.forEach((header: string, index: number) => {
-          const cellValue = row[index];
+        validHeaders.forEach((header: string) => {
+          const sourceIndex = rawHeaders.indexOf(header);
+          const cellValue = row[sourceIndex];
           mappedRow[header] = cellValue === undefined ? null : (cellValue as string | number | null);
         });
 
@@ -108,16 +157,22 @@ function parseWorksheet(file: RcFile) {
       })
       .filter((row: DataRow) => Object.values(row).some((value) => value !== null && String(value).trim() !== ''));
 
-    const dateFields = headers.filter((header: string) => dateNamePattern.test(header));
+    const availableFixedDimensions = FIXED_DIMENSION_FIELDS.filter((field) => validHeaders.includes(field));
+    const dateField = availableFixedDimensions.find((field) => field === '日期')
+      ? '日期'
+      : validHeaders.find((header) => dateNamePattern.test(header));
 
-    const metricFields = headers.filter((header: string) => {
-      if (dateFields.includes(header)) {
-        return false;
-      }
+    const dimensions = uniqList(
+      [...availableFixedDimensions, ...(dateField ? ['日期'] : [])].filter((field) => field && !isMeaninglessHeader(field)),
+    );
 
+    const metricCandidates = validHeaders.filter((header: string) => !dimensions.includes(header));
+
+    const metricFields = metricCandidates.filter((header: string) => {
       const nonEmptyValues = rows
         .map((row: DataRow) => row[header])
         .filter((value) => value !== null && String(value).trim() !== '');
+
       if (nonEmptyValues.length === 0) {
         return false;
       }
@@ -126,21 +181,22 @@ function parseWorksheet(file: RcFile) {
       return numericCount / nonEmptyValues.length >= 0.6;
     });
 
-    const dimensions = headers.filter((header: string) => !metricFields.includes(header));
-
     const normalizedRows = rows.map((row: DataRow) => {
       const normalizedRow: DataRow = { ...row };
-      dateFields.forEach((field: string) => {
-        normalizedRow[field] = normalizeDateValue(normalizedRow[field]);
-      });
+      if (dateField && normalizedRow[dateField] !== undefined) {
+        normalizedRow[dateField] = normalizeDateValue(normalizedRow[dateField]);
+      }
+      if (dateField && dateField !== '日期') {
+        normalizedRow.日期 = normalizedRow[dateField] ?? null;
+      }
       return normalizedRow;
     });
 
     return {
       rows: normalizedRows,
       dimensions,
-      metrics: metricFields,
-      dateFields,
+      metrics: uniqList(metricFields),
+      sheetName,
     };
   });
 }
@@ -151,6 +207,7 @@ export default function App() {
   );
   const [dimensionFields, setDimensionFields] = useState<DimensionField[]>(defaultDimensions);
   const [metricFields, setMetricFields] = useState<MetricField[]>(defaultMetrics);
+  const [parsedSheetName, setParsedSheetName] = useState(DEFAULT_SHEET_NAME);
 
   const uploadProps: UploadProps = useMemo(
     () => ({
@@ -161,18 +218,19 @@ export default function App() {
           const parsed = await parseWorksheet(file);
 
           setRows(parsed.rows);
+          setParsedSheetName(parsed.sheetName);
           setDimensionFields(
             parsed.dimensions.map((field: string) => ({
               key: field,
               name: field,
-              isDate: parsed.dateFields.includes(field),
+              isDate: field === '日期',
             })),
           );
           setMetricFields(
             parsed.metrics.map((field: string) => ({
               key: field,
               name: field,
-              tag: 'T1',
+              tag: T0_METRIC_NAMES.includes(field) ? 'T0' : 'T1',
             })),
           );
 
@@ -188,7 +246,7 @@ export default function App() {
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Sider width={280} theme="light" style={{ borderRight: '1px solid #f0f0f0', padding: 16 }}>
+      <Sider width={320} theme="light" style={{ borderRight: '1px solid #f0f0f0', padding: 16 }}>
         <FieldPanel dimensions={dimensionFields} metrics={metricFields} />
       </Sider>
 
@@ -215,16 +273,47 @@ export default function App() {
             </Card>
 
             <Card title="上传解析结果" bordered={false}>
-              <Descriptions size="small" column={2} bordered>
+              <Descriptions size="small" column={3} bordered>
                 <Descriptions.Item label="总行数">{rows.length}</Descriptions.Item>
                 <Descriptions.Item label="总字段数">{dimensionFields.length + metricFields.length}</Descriptions.Item>
-                <Descriptions.Item label="识别维度字段" span={2}>
-                  {dimensionFields.map((item: DimensionField) => item.name).join('、') || '-'}
-                </Descriptions.Item>
-                <Descriptions.Item label="识别指标字段" span={2}>
-                  {metricFields.map((item: MetricField) => item.name).join('、') || '-'}
-                </Descriptions.Item>
+                <Descriptions.Item label="当前 Sheet">{parsedSheetName}</Descriptions.Item>
               </Descriptions>
+
+              <Collapse
+                style={{ marginTop: 16 }}
+                bordered={false}
+                items={[
+                  {
+                    key: 'recognized-details',
+                    label: '查看识别详情',
+                    children: (
+                      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                        <section>
+                          <Typography.Title level={5}>识别出的维度字段</Typography.Title>
+                          <Space wrap>
+                            {dimensionFields.map((item) => (
+                              <Tag key={item.key} color="blue">
+                                {item.name}
+                              </Tag>
+                            ))}
+                          </Space>
+                        </section>
+                        <section>
+                          <Typography.Title level={5}>识别出的指标字段</Typography.Title>
+                          <Space wrap>
+                            {metricFields.map((item) => (
+                              <Space key={item.key} size={6}>
+                                <Tag>{item.name}</Tag>
+                                <Tag color={item.tag === 'T0' ? 'blue' : 'default'}>{item.tag}</Tag>
+                              </Space>
+                            ))}
+                          </Space>
+                        </section>
+                      </Space>
+                    ),
+                  },
+                ]}
+              />
             </Card>
 
             <Card title="数据预览（前 20 行）" bordered={false}>
