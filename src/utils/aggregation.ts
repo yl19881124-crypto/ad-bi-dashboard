@@ -24,6 +24,13 @@ interface GroupState {
   sums: Record<string, number>;
 }
 
+const UNKNOWN_SPLIT_VALUE = '未知';
+const OTHER_SPLIT_VALUE = '其他';
+
+function buildGroupKey(date: string, splitValue: string): string {
+  return JSON.stringify([date, splitValue]);
+}
+
 function toNumber(value: unknown): number {
   if (value === null || value === undefined || value === '') {
     return 0;
@@ -115,8 +122,9 @@ export function aggregateRowsByDateAndDimension({ rows, splitDimension, metricKe
     }
 
     const splitRawValue = row[splitDimension];
-    const splitValue = splitRawValue === null || splitRawValue === undefined || splitRawValue === '' ? '-' : String(splitRawValue);
-    const key = `${date}__${splitValue}`;
+    const normalizedValue = splitRawValue === null || splitRawValue === undefined ? '' : String(splitRawValue).trim();
+    const splitValue = normalizedValue === '' ? UNKNOWN_SPLIT_VALUE : normalizedValue;
+    const key = buildGroupKey(date, splitValue);
 
     if (!baseGroups.has(key)) {
       baseGroups.set(key, {
@@ -154,12 +162,12 @@ export function aggregateRowsByDateAndDimension({ rows, splitDimension, metricKe
 
   const mergedGroups = new Map<string, GroupState>();
   baseGroups.forEach((group) => {
-    const normalizedSplit = topSplitValues.has(group.splitValue) ? group.splitValue : '其他';
-    if (normalizedSplit === '其他' && !needOthers) {
+    const normalizedSplit = topSplitValues.has(group.splitValue) ? group.splitValue : OTHER_SPLIT_VALUE;
+    if (normalizedSplit === OTHER_SPLIT_VALUE && !needOthers) {
       return;
     }
 
-    const key = `${group.date}__${normalizedSplit}`;
+    const key = buildGroupKey(group.date, normalizedSplit);
     if (!mergedGroups.has(key)) {
       mergedGroups.set(key, {
         date: group.date,

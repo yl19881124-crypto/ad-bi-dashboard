@@ -18,7 +18,7 @@ interface TrendChartProps {
 }
 
 export default function TrendChart({ rows, dates, series, splitDimensionLabel, metricLabel, metricType }: TrendChartProps) {
-  const pointMap = new Map(rows.map((row) => [`${row.日期}__${row.拆分维度}`, row.指标值]));
+  const pointMap = new Map(rows.map((row) => [JSON.stringify([row.日期, row.拆分维度]), row.指标值]));
 
   const option = {
     tooltip: {
@@ -42,7 +42,7 @@ export default function TrendChart({ rows, dates, series, splitDimensionLabel, m
       name: splitValue,
       type: 'line',
       smooth: true,
-      data: dates.map((date) => pointMap.get(`${date}__${splitValue}`) ?? null),
+      data: dates.map((date) => pointMap.get(JSON.stringify([date, splitValue])) ?? null),
       connectNulls: false,
     })),
   };
