@@ -1,4 +1,5 @@
 import ReactECharts from 'echarts-for-react';
+import { useMemo } from 'react';
 import type { MetricType } from '../config/metricConfig';
 import { formatMetricValue } from '../utils/aggregation';
 
@@ -15,37 +16,40 @@ interface TrendChartProps {
   splitDimensionLabel: string;
   metricLabel: string;
   metricType: MetricType;
+  chartKey: string;
 }
 
-export default function TrendChart({ rows, dates, series, splitDimensionLabel, metricLabel, metricType }: TrendChartProps) {
-  const pointMap = new Map(rows.map((row) => [JSON.stringify([row.日期, row.拆分维度]), row.指标值]));
+export default function TrendChart({ rows, dates, series, splitDimensionLabel, metricLabel, metricType, chartKey }: TrendChartProps) {
+  const option = useMemo(() => {
+    const pointMap = new Map(rows.map((row) => [JSON.stringify([row.日期, row.拆分维度]), row.指标值]));
 
-  const option = {
-    tooltip: {
-      trigger: 'axis',
-      formatter: (params: Array<{ axisValue: string; seriesName: string; data: number | null }>) => {
-        const date = params[0]?.axisValue ?? '-';
-        const lines = params
-          .map((item) => `${splitDimensionLabel}：${item.seriesName}<br/>${metricLabel}：${formatMetricValue(item.data, metricType)}`)
-          .join('<br/>');
-        return `日期：${date}<br/>${lines}`;
+    return {
+      tooltip: {
+        trigger: 'axis',
+        formatter: (params: Array<{ axisValue: string; seriesName: string; data: number | null }>) => {
+          const date = params[0]?.axisValue ?? '-';
+          const lines = params
+            .map((item) => `${splitDimensionLabel}：${item.seriesName}<br/>${metricLabel}：${formatMetricValue(item.data, metricType)}`)
+            .join('<br/>');
+          return `日期：${date}<br/>${lines}`;
+        },
       },
-    },
-    legend: { data: series },
-    xAxis: {
-      type: 'category',
-      data: dates,
-      name: '日期',
-    },
-    yAxis: { type: 'value', name: metricLabel },
-    series: series.map((splitValue) => ({
-      name: splitValue,
-      type: 'line',
-      smooth: true,
-      data: dates.map((date) => pointMap.get(JSON.stringify([date, splitValue])) ?? null),
-      connectNulls: false,
-    })),
-  };
+      legend: { data: series },
+      xAxis: {
+        type: 'category',
+        data: dates,
+        name: '日期',
+      },
+      yAxis: { type: 'value', name: metricLabel },
+      series: series.map((splitValue) => ({
+        name: splitValue,
+        type: 'line',
+        smooth: true,
+        data: dates.map((date) => pointMap.get(JSON.stringify([date, splitValue])) ?? null),
+        connectNulls: false,
+      })),
+    };
+  }, [rows, dates, series, splitDimensionLabel, metricLabel, metricType]);
 
-  return <ReactECharts option={option} style={{ height: 360 }} />;
+  return <ReactECharts key={chartKey} option={option} notMerge style={{ height: 360 }} />;
 }

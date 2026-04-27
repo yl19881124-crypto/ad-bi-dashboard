@@ -235,6 +235,17 @@ export default function App() {
     () => aggregateRowsByDateAndDimension({ rows, splitDimension: selectedDimension, metricKey: selectedMetric, dateRange: selectedDateRange }),
     [rows, selectedDimension, selectedMetric, selectedDateRange],
   );
+  const trendChartKey = useMemo(
+    () =>
+      JSON.stringify({
+        splitDimension: selectedDimension,
+        metric: selectedMetric,
+        dateRange: selectedDateRange?.map((item) => item.format('YYYY-MM-DD')) ?? null,
+        rowCount: aggregatedResult.rows.length,
+        series: aggregatedResult.series,
+      }),
+    [selectedDimension, selectedMetric, selectedDateRange, aggregatedResult.rows.length, aggregatedResult.series],
+  );
 
   const currentMetricType = getMetricType(selectedMetric);
   const emptyText = '暂无数据，请调整筛选条件';
@@ -282,6 +293,7 @@ export default function App() {
                   splitDimensionLabel={selectedDimension}
                   metricLabel={selectedMetric}
                   metricType={currentMetricType}
+                  chartKey={trendChartKey}
                 />
               ) : (
                 <Empty description={emptyText} />
