@@ -3,6 +3,7 @@ export type FieldTag = 'T0' | 'T1';
 export interface DimensionField {
   key: string;
   name: string;
+  isDate?: boolean;
 }
 
 export interface MetricField {
@@ -18,3 +19,5 @@ export interface AdDataRow {
   展示量: number;
   点击量: number;
 }
+
+export type DataRow = Record<string, string | number | null>;

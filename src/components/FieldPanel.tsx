@@ -14,9 +14,10 @@ export default function FieldPanel({ dimensions, metrics }: FieldPanelProps) {
           <Typography.Title level={5}>维度字段</Typography.Title>
           <Space wrap>
             {dimensions.map((item) => (
-              <Tag key={item.key} color="blue">
-                {item.name}
-              </Tag>
+              <Space key={item.key} size={4}>
+                <Tag color="blue">{item.name}</Tag>
+                {item.isDate ? <Tag color="cyan">日期</Tag> : null}
+              </Space>
             ))}
           </Space>
         </section>
