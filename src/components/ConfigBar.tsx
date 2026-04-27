@@ -12,6 +12,8 @@ interface ConfigBarProps {
 }
 
 const defaultRange: [Dayjs, Dayjs] = [dayjs('2026-04-20'), dayjs('2026-04-26')];
+const phase1DefaultDimension = '版位';
+const phase1DefaultMetric = '当日付费人数';
 
 export default function ConfigBar({ dimensions, metrics, defaultDimension, defaultMetric }: ConfigBarProps) {
   return (
@@ -19,14 +21,14 @@ export default function ConfigBar({ dimensions, metrics, defaultDimension, defau
       <Space wrap size="middle">
         <RangePicker defaultValue={defaultRange} />
         <Select
-          defaultValue={defaultDimension}
+          defaultValue={defaultDimension ?? phase1DefaultDimension}
           style={{ width: 160 }}
           options={dimensions.map((item) => ({ value: item.key, label: item.name }))}
           placeholder="维度选择"
         />
         <Select
           mode="multiple"
-          defaultValue={defaultMetric ? [defaultMetric] : []}
+          defaultValue={[defaultMetric ?? phase1DefaultMetric]}
           style={{ width: 260 }}
           options={metrics.map((item) => ({ value: item.key, label: item.name }))}
           placeholder="指标选择"

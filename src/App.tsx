@@ -115,7 +115,7 @@ export default function App() {
               </Descriptions>
             </Card>
 
-            <Card title="趋势图（默认：折线图 / 默认X轴：日期类字段 / 默认指标：首个识别指标）" bordered={false}>
+            <Card title="趋势图（默认：折线图 / 默认X轴：日期 / 默认拆分维度：版位 / 默认指标：当日付费人数）" bordered={false}>
               <TrendChart rows={rows} xField={chartXField} metricField={defaultMetric} />
             </Card>
 
