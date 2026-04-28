@@ -1,4 +1,3 @@
-import dayjs, { Dayjs } from 'dayjs';
 import type { MetricConfig } from '../config/metricConfig';
 import { getMetricType, metricConfigMap } from '../config/metricConfig';
 import type { DataRow } from '../types';
@@ -14,7 +13,7 @@ interface AggregationOptions {
   rows: DataRow[];
   splitDimension: string;
   metricKey: string;
-  dateRange?: [Dayjs, Dayjs] | null;
+  dateRange?: [string, string] | null;
   maxSeries?: number;
 }
 
@@ -61,18 +60,17 @@ function normalizeDate(dateValue: unknown): string {
   return '-';
 }
 
-function inDateRange(date: string, dateRange?: [Dayjs, Dayjs] | null): boolean {
+function inDateRange(date: string, dateRange?: [string, string] | null): boolean {
   if (!dateRange) {
     return true;
   }
 
   const [start, end] = dateRange;
-  const current = dayjs(date);
-  if (!current.isValid()) {
+  if (!date || date === '-') {
     return false;
   }
 
-  return (current.isAfter(start, 'day') || current.isSame(start, 'day')) && (current.isBefore(end, 'day') || current.isSame(end, 'day'));
+  return date >= start && date <= end;
 }
 
 function resolveMetricValue(metricKey: string, sums: Record<string, number>): number | null {
@@ -188,7 +186,7 @@ export function aggregateRowsByDateAndDimension({ rows, splitDimension, metricKe
       if (a.日期 === b.日期) {
         return a.拆分维度.localeCompare(b.拆分维度, 'zh-CN');
       }
-      return dayjs(a.日期).valueOf() - dayjs(b.日期).valueOf();
+      return a.日期.localeCompare(b.日期, 'zh-CN');
     });
 
   const dates = Array.from(new Set(aggregatedRows.map((row) => row.日期)));
