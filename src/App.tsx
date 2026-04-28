@@ -9,6 +9,7 @@ import {
   Empty,
   Layout,
   Row,
+  Select,
   Space,
   Table,
   Tag,
@@ -29,13 +30,14 @@ import TrendChart from './components/TrendChart';
 import { getMetricTrendDirection, T0_METRIC_CONFIGS, T0_METRIC_KEYS, getMetricType } from './config/metricConfig';
 import { dimensionFields as defaultDimensions, metricFields as defaultMetrics, mockRows } from './mock/data';
 import type { DataRow, DimensionField, MetricField } from './types';
-import { aggregateRowsByDateAndDimension, calculateMetricByRange, formatMetricValue, getFilterOptions } from './utils/aggregation';
+import { aggregateRowsByDateAndDimension, calculateMetricByRange, filterRows, formatMetricValue, getFilterOptions } from './utils/aggregation';
 import { normalizeExcelDate } from './utils/date';
 
 const { Header, Sider, Content } = Layout;
 const DEFAULT_SHEET_NAME = '分账户底表';
 const CORE_CARD_METRICS = ['当日付费人数', '当日付费成本', '当日付费ROI', '3日付费成本', '3日付费ROI', '3日付费率'];
 const ADVANCED_FILTER_FIELDS = ['渠道', '代理', '版位', '操作系统', '账户命名', '优化目标', '出价方式', '账户ID', '账户名称', '广告组ID', '广告组名称'];
+const T0_OVERVIEW_ALL = '__ALL__';
 
 const SCENARIOS = [
   { key: '整体付费趋势', name: '整体付费趋势', dimension: '渠道', metric: '当日付费人数' },
@@ -149,8 +151,31 @@ export default function App() {
   const [selectedMetric, setSelectedMetric] = useState('当日付费人数');
   const [selectedDateRange, setSelectedDateRange] = useState<[string, string] | null>(['2026-04-20', '2026-04-26']);
   const [selectedFilters, setSelectedFilters] = useState<Record<string, string[]>>({});
+  const [t0OverviewFilterField, setT0OverviewFilterField] = useState(T0_OVERVIEW_ALL);
+  const [t0OverviewFilterValues, setT0OverviewFilterValues] = useState<string[]>([]);
 
   const filterOptions = useMemo(() => getFilterOptions(rows, ADVANCED_FILTER_FIELDS), [rows]);
+  const availableT0FilterFields = useMemo(
+    () => ADVANCED_FILTER_FIELDS.filter((field) => filterOptions[field]),
+    [filterOptions],
+  );
+  const rowsAfterGlobalFilters = useMemo(() => filterRows(rows, selectedFilters), [rows, selectedFilters]);
+  const t0FilterOptions = useMemo(() => {
+    if (t0OverviewFilterField === T0_OVERVIEW_ALL) return [];
+    return getFilterOptions(rowsAfterGlobalFilters, [t0OverviewFilterField])[t0OverviewFilterField] ?? [];
+  }, [rowsAfterGlobalFilters, t0OverviewFilterField]);
+  const t0OverviewRows = useMemo(() => {
+    if (t0OverviewFilterField === T0_OVERVIEW_ALL || t0OverviewFilterValues.length === 0) return rowsAfterGlobalFilters;
+    return filterRows(rowsAfterGlobalFilters, { [t0OverviewFilterField]: t0OverviewFilterValues });
+  }, [rowsAfterGlobalFilters, t0OverviewFilterField, t0OverviewFilterValues]);
+  const hasT0OverviewData = useMemo(
+    () => t0OverviewRows.some((row) => {
+      const normalizedDate = normalizeExcelDate(row.日期);
+      if (!selectedDateRange) return Boolean(normalizedDate);
+      return Boolean(normalizedDate && normalizedDate >= selectedDateRange[0] && normalizedDate <= selectedDateRange[1]);
+    }),
+    [t0OverviewRows, selectedDateRange],
+  );
 
   const uploadProps: UploadProps = useMemo(
     () => ({
@@ -169,6 +194,8 @@ export default function App() {
           setDimensionFields(parsedDimensions);
           setMetricFields(parsedMetrics);
           setSelectedFilters({});
+          setT0OverviewFilterField(T0_OVERVIEW_ALL);
+          setT0OverviewFilterValues([]);
 
           if (!parsedDimensions.some((item) => item.key === selectedDimension)) setSelectedDimension(parsedDimensions.find((item) => item.key !== '日期')?.key ?? '日期');
           if (!parsedMetrics.some((item) => item.key === selectedMetric)) setSelectedMetric(parsedMetrics[0]?.key ?? '当日付费人数');
@@ -199,8 +226,8 @@ export default function App() {
 
   const overviewCards = useMemo(() => {
     return CORE_CARD_METRICS.map((metricKey) => {
-      const current = calculateMetricByRange(aggregatedResult.filteredRows, metricKey, selectedDateRange);
-      const previous = calculateMetricByRange(aggregatedResult.filteredRows, metricKey, previousRange);
+      const current = calculateMetricByRange(t0OverviewRows, metricKey, selectedDateRange);
+      const previous = calculateMetricByRange(t0OverviewRows, metricKey, previousRange);
       const changePct = current !== null && previous !== null && previous !== 0 ? (current - previous) / previous : null;
       const direction = getMetricTrendDirection(metricKey);
 
@@ -223,7 +250,7 @@ export default function App() {
         status,
       };
     });
-  }, [aggregatedResult.filteredRows, selectedDateRange, previousRange]);
+  }, [t0OverviewRows, selectedDateRange, previousRange]);
 
   const trendChartKey = useMemo(
     () => JSON.stringify({ splitDimension: selectedDimension, metric: selectedMetric, dateRange: selectedDateRange, rowCount: aggregatedResult.rows.length }),
@@ -246,6 +273,15 @@ export default function App() {
   const scenarioName = SCENARIOS.find((item) => item.key === selectedScenario)?.name ?? selectedScenario;
   const dateText = selectedDateRange ? `${selectedDateRange[0]} ~ ${selectedDateRange[1]}` : '全部日期';
   const emptyText = '暂无数据，请调整筛选条件';
+  const globalFilterSummary = useMemo(() => {
+    const activeItems = Object.entries(selectedFilters).filter(([, values]) => values.length > 0);
+    if (!activeItems.length) return '无';
+    return activeItems.map(([field, values]) => `${field} = ${values.join('、')}`).join('；');
+  }, [selectedFilters]);
+  const t0OverviewFilterSummary =
+    t0OverviewFilterField === T0_OVERVIEW_ALL || t0OverviewFilterValues.length === 0
+      ? '无'
+      : `${t0OverviewFilterField} = ${t0OverviewFilterValues.join('、')}`;
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
@@ -289,7 +325,52 @@ export default function App() {
               onClearFilters={() => setSelectedFilters({})}
             />
 
-            <Card bordered={false} title="T0 指标概览（当前周期 vs 上一周期）">
+            <Card bordered={false} title="T0 核心指标概览">
+              <Space direction="vertical" size="small" style={{ width: '100%', marginBottom: 12 }}>
+                <Typography.Text type="secondary">当前范围：{selectedDateRange ? `${selectedDateRange[0]} 至 ${selectedDateRange[1]}` : '全部日期'}</Typography.Text>
+                <Typography.Text type="secondary">全局筛选：{globalFilterSummary}</Typography.Text>
+                <Typography.Text type="secondary">T0概览筛选：{t0OverviewFilterSummary}</Typography.Text>
+              </Space>
+              <Space direction="vertical" size="small" style={{ width: '100%', marginBottom: 16 }}>
+                <Space wrap>
+                  <Select
+                    style={{ width: 220 }}
+                    value={t0OverviewFilterField}
+                    options={[{ label: '全部', value: T0_OVERVIEW_ALL }, ...availableT0FilterFields.map((field) => ({ label: field, value: field }))]}
+                    onChange={(value) => {
+                      setT0OverviewFilterField(value);
+                      setT0OverviewFilterValues([]);
+                    }}
+                    placeholder="维度字段"
+                  />
+                  <Select
+                    mode="multiple"
+                    showSearch
+                    allowClear
+                    maxTagCount="responsive"
+                    style={{ minWidth: 280 }}
+                    value={t0OverviewFilterValues}
+                    options={t0FilterOptions.map((value) => ({ label: value, value }))}
+                    onChange={(values) => setT0OverviewFilterValues(values)}
+                    placeholder={t0OverviewFilterField === T0_OVERVIEW_ALL ? '维度值（请选择维度字段）' : '维度值（可多选）'}
+                    disabled={t0OverviewFilterField === T0_OVERVIEW_ALL || t0FilterOptions.length === 0}
+                  />
+                  <Button
+                    onClick={() => {
+                      setT0OverviewFilterField(T0_OVERVIEW_ALL);
+                      setT0OverviewFilterValues([]);
+                    }}
+                  >
+                    清空 T0 筛选
+                  </Button>
+                </Space>
+                {t0OverviewFilterField !== T0_OVERVIEW_ALL && t0OverviewFilterValues.length > 0 && (
+                  <Space wrap>
+                    <Typography.Text type="secondary">T0概览筛选：</Typography.Text>
+                    <Tag color="blue">{`${t0OverviewFilterField} = ${t0OverviewFilterValues.join('、')}`}</Tag>
+                  </Space>
+                )}
+              </Space>
               <div style={{ overflowX: 'auto' }}>
                 <Row gutter={[12, 12]} wrap>
                   {overviewCards.map((item) => (
@@ -306,6 +387,9 @@ export default function App() {
                   ))}
                 </Row>
               </div>
+              {!hasT0OverviewData && (
+                <Alert style={{ marginTop: 12 }} showIcon type="warning" message="当前 T0 筛选条件下暂无数据" />
+              )}
             </Card>
 
             <Card title={`趋势图（${scenarioName} / ${selectedDimension} / ${selectedMetric} / ${dateText}）`} bordered={false}>
