@@ -31,10 +31,32 @@ export interface ReviewDragItem {
   reason: string;
 }
 
+export interface ReviewEvidenceRow {
+  key: string;
+  dimensionValue: string;
+  currentValue: number | null;
+  previousValue: number | null;
+  changeValue: number | null;
+  changeRate: number | null;
+  contribution: number | null;
+  reason: string;
+  numeratorCurrent: number;
+  numeratorPrevious: number;
+  denominatorCurrent: number;
+  denominatorPrevious: number;
+}
+
+export interface ReviewEvidenceSection {
+  dimension: string;
+  rows: ReviewEvidenceRow[];
+}
+
 export interface ReviewSummaryData {
   context: ReviewContext;
   overviewItems: ReviewOverviewItem[];
   coreConclusions: string[];
+  evidenceSections: ReviewEvidenceSection[];
+  evidenceTextLines: string[];
   dragItems: ReviewDragItem[];
   actionItems: string[];
   pendingChecks: string[];

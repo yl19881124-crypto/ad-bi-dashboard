@@ -342,6 +342,8 @@ export default function App() {
       overviewItems: overviewCards,
       diagnosisResult: reviewDiagnosisResult,
       selectedMetric,
+      rows: t0OverviewRows,
+      currentRange: selectedDateRange,
     });
   }, [
     hasUploadedData,
@@ -355,6 +357,7 @@ export default function App() {
     parsedSheetName,
     overviewCards,
     reviewDiagnosisResult,
+    t0OverviewRows,
   ]);
 
   const trendChartKey = useMemo(
