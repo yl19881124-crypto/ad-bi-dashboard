@@ -85,7 +85,7 @@ export default function DiagnosisDrawer(props: Props) {
   );
 
   return (
-    <Drawer title="T0 指标诊断分析" width={1160} open={open} onClose={onClose} destroyOnClose>
+    <Drawer title="T0 指标诊断分析" width={1160} open={open} onClose={onClose} destroyOnClose styles={{ body: { overflowY: 'auto' } }}>
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         <Card size="small" title="诊断配置">
           <Space direction="vertical" size="small" style={{ width: '100%' }}>
@@ -130,7 +130,13 @@ export default function DiagnosisDrawer(props: Props) {
         ) : (
           <>
             <Card title="核心结论" size="small">
-              <Typography.Paragraph style={{ marginBottom: 0 }}>{result.conclusion}</Typography.Paragraph>
+              <ol style={{ margin: 0, paddingLeft: 20 }}>
+                {result.conclusionLines.map((line) => (
+                  <li key={line}>
+                    <Typography.Paragraph style={{ marginBottom: 8 }}>{line}</Typography.Paragraph>
+                  </li>
+                ))}
+              </ol>
             </Card>
 
             <Card title="指标变化概览" size="small">

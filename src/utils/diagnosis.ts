@@ -50,8 +50,34 @@ function ratioChange(current: number, previous: number) {
 }
 
 function toPct(value: number | null) {
-  if (value === null) return '--';
+  if (value === null || !Number.isFinite(value)) return null;
   return `${(value * 100).toFixed(2)}%`;
+}
+
+function formatMetricText(value: number | null, metricType: ReturnType<typeof getMetricType>) {
+  if (value === null || !Number.isFinite(value)) return '暂无可用数据';
+  if (metricType === 'number') return `${Math.round(value)}`;
+  return `${value.toFixed(2)}`;
+}
+
+function getSecondaryConclusion(options: {
+  secondary: { group: string; row: DiagnosisSecondaryDimensionResult['rows'][number] } | undefined;
+  metricType: ReturnType<typeof getMetricType>;
+}) {
+  const { secondary, metricType } = options;
+  if (!secondary) return '当前二级下钻数据不足，建议优先结合聚合明细表进一步确认具体影响路径。';
+  if (secondary.row.sampleWarning) {
+    return `继续下钻发现，「${secondary.group}=${secondary.row.dimensionValue}」变化较明显，但样本量较小，结论仅供参考，建议结合广告组明细进一步确认。`;
+  }
+  const contributionText = toPct(secondary.row.contribution);
+  if (contributionText) {
+    return `继续下钻发现，「${secondary.group}=${secondary.row.dimensionValue}」贡献了该路径变化的 ${contributionText}，是主要影响因素。`;
+  }
+  const currentMetric = formatMetricText(secondary.row.currentMetric, metricType);
+  const previousMetric = formatMetricText(secondary.row.previousMetric, metricType);
+  const delta = (secondary.row.currentMetric ?? 0) - (secondary.row.previousMetric ?? 0);
+  const deltaText = metricType === 'number' ? `${Math.round(delta)}` : delta.toFixed(2);
+  return `继续下钻发现，「${secondary.group}=${secondary.row.dimensionValue}」变化最明显，当前周期为 ${currentMetric}，上期为 ${previousMetric}，变化 ${deltaText}，是该路径下最值得关注的维度值。`;
 }
 
 function buildFormulaReason(metricKey: string, nc: number, np: number, dc: number, dp: number, sampleWarning: boolean) {
@@ -92,9 +118,12 @@ function buildFormulaReason(metricKey: string, nc: number, np: number, dc: numbe
 
 function buildActionByPath(path: string[]) {
   const pathText = path.join(' + ');
-  if (path.includes('渠道')) return `优先检查 ${pathText} 下的消耗、人数与 ROI 是否同步恶化`;
-  if (path.includes('操作系统')) return `检查 ${pathText} 下素材、落地页、直播间承接是否异常`;
-  if (path.includes('广告组名称')) return `优先查看 ${pathText} 的预算、出价、素材与转化回传变化`;
+  if (path.includes('渠道') && path.includes('代理')) {
+    return `建议优先排查「${pathText}」下的账户命名和广告组，重点查看消耗、付费人数、付费成本、ROI、素材变化、预算调整和转化回传。`;
+  }
+  if (path.includes('操作系统')) return `建议重点对比「${pathText}」下的素材点击率、落地页进入、直播间承接和付费转化。`;
+  if (path.includes('广告组名称')) return `建议优先查看「${pathText}」近期是否存在预算调整、出价变化、素材衰退、计划暂停或回传异常。`;
+  if (path.includes('渠道')) return `优先检查「${pathText}」下的消耗、人数与 ROI 是否同步变化。`;
   if (path.includes('账户命名') || path.includes('账户名称')) return `检查 ${pathText} 是否存在预算调整、计划暂停或素材衰退`;
   return `围绕 ${pathText} 继续逐层排查关键账户与广告组`;
 }
@@ -120,6 +149,7 @@ export function runDiagnosis(params: {
       previousRange,
       summary: { metricKey, metricType, currentValue: null, previousValue: null, changeValue: null, changeRate: null, status: '持平', direction },
       conclusion: '缺少必要字段，无法诊断该指标',
+      conclusionLines: ['缺少必要字段，无法诊断该指标。', '建议补齐指标分子分母字段后重新诊断。', '可先查看聚合明细确认异常维度。'],
       dimensionResults: [],
       suggestions: [],
       error: '缺少必要字段，无法诊断该指标',
@@ -140,6 +170,11 @@ export function runDiagnosis(params: {
       previousRange,
       summary: { metricKey, metricType, currentValue: null, previousValue: null, changeValue: null, changeRate: null, status: '持平', direction },
       conclusion: !currentRows.length ? '当前筛选条件下暂无数据' : '暂无上一周期数据，无法计算环比',
+      conclusionLines: [
+        !currentRows.length ? '当前筛选条件下暂无可用数据，暂无法形成周期对比结论。' : '暂无上一周期数据，暂无法形成环比结论。',
+        '建议先核对筛选条件、日期范围和指标字段完整性。',
+        '可先通过明细表观察高消耗与高波动维度，辅助人工判断。',
+      ],
       dimensionResults: [],
       suggestions: [],
       error: !currentRows.length ? '当前筛选条件下暂无数据' : '暂无上一周期数据，无法计算环比',
@@ -236,7 +271,13 @@ export function runDiagnosis(params: {
       .map((item) => {
         const valueDiff = (item.currentMetric ?? 0) - (item.previousMetric ?? 0);
         const reason = metricConfig?.mode === 'source'
-          ? `${dimension}=${item.dimensionValue} ${valueDiff >= 0 ? '上升' : '下降'} ${Math.abs(valueDiff).toFixed(metricType === 'number' ? 0 : 2)}，贡献 ${toPct(item.contribution)}`
+          ? (() => {
+            const contributionText = toPct(item.contribution);
+            if (contributionText) {
+              return `${dimension}=${item.dimensionValue} ${valueDiff >= 0 ? '上升' : '下降'} ${Math.abs(valueDiff).toFixed(metricType === 'number' ? 0 : 2)}，贡献 ${contributionText}`;
+            }
+            return `${dimension}=${item.dimensionValue} ${valueDiff >= 0 ? '上升' : '下降'} ${Math.abs(valueDiff).toFixed(metricType === 'number' ? 0 : 2)}，贡献度暂无法计算，但该维度变化最明显`;
+          })()
           : buildFormulaReason(metricKey, item.numeratorCurrent, item.numeratorPrevious, item.denominatorCurrent, item.denominatorPrevious, item.sampleWarning);
 
         const secondaryResults: DiagnosisSecondaryDimensionResult[] = allDrillDimensions
@@ -255,7 +296,13 @@ export function runDiagnosis(params: {
               .map((subItem) => ({
                 ...subItem,
                 reason: metricConfig?.mode === 'source'
-                  ? `${subDimension}=${subItem.dimensionValue} 对 ${dimension}=${item.dimensionValue} 贡献 ${toPct(subItem.contribution)}`
+                  ? (() => {
+                    const contributionText = toPct(subItem.contribution);
+                    if (contributionText) {
+                      return `${subDimension}=${subItem.dimensionValue} 对 ${dimension}=${item.dimensionValue} 贡献 ${contributionText}`;
+                    }
+                    return `${subDimension}=${subItem.dimensionValue} 对 ${dimension}=${item.dimensionValue} 贡献度暂无法计算，但该维度变化最明显`;
+                  })()
                   : buildFormulaReason(metricKey, subItem.numeratorCurrent, subItem.numeratorPrevious, subItem.denominatorCurrent, subItem.denominatorPrevious, subItem.sampleWarning),
               }));
 
@@ -295,10 +342,50 @@ export function runDiagnosis(params: {
   const secondary = primary?.row.secondaryResults?.flatMap((group) => group.rows.slice(0, 1).map((row) => ({ group: group.dimension, row })))
     .sort((a, b) => b.row.impactScore - a.row.impactScore)?.[0];
 
-  const conclusion =
-    changeRate === null
-      ? `当前周期「${metricKey}」暂无可比结果。`
-      : `当前周期「${metricKey}」较上一周期${changeRate >= 0 ? '上升' : '下降'} ${Math.abs(changeRate * 100).toFixed(2)}%。一级下钻主要为「${primary ? `${primary.group}=${primary.row.dimensionValue}` : '暂无'}」，贡献 ${toPct(primary?.row.contribution ?? null)}。${secondary ? `继续下钻发现「${secondary.group}=${secondary.row.dimensionValue}」是关键拖累/驱动路径，贡献 ${toPct(secondary.row.contribution)}。` : ''}`;
+  const primaryContribution = toPct(primary?.row.contribution ?? null);
+  const metricImprovement = changeRate === null
+    ? '暂无可比结论'
+    : (() => {
+      if (status === '变好') return '指标表现变好';
+      if (status === '变差') return '指标表现变差';
+      return '指标整体基本持平';
+    })();
+
+  const metricLine = (() => {
+    if (changeRate === null) return `当前周期「${metricKey}」暂无可比结果，建议先补齐上一周期数据后再判断趋势。`;
+    const currentText = formatMetricText(currentValue, metricType);
+    const previousText = formatMetricText(previousValue, metricType);
+    const deltaText = formatMetricText(changeValue, metricType);
+    if (COST_METRICS.has(metricKey)) {
+      const numeratorRate = ratioChange(totalNumeratorCurrent, totalNumeratorPrevious);
+      const denominatorRate = ratioChange(totalDenominatorCurrent, totalDenominatorPrevious);
+      return `当前周期「${metricKey}」为 ${currentText}，上期为 ${previousText}，变化 ${deltaText}（${changeRate >= 0 ? '+' : ''}${(changeRate * 100).toFixed(2)}%），${status === '变好' ? '成本改善' : status === '变差' ? '成本变差' : '成本基本持平'}；消耗变化 ${toPct(numeratorRate) ?? '暂无可比结果'}，分母人数变化 ${toPct(denominatorRate) ?? '暂无可比结果'}。`;
+    }
+    if (ROI_METRICS.has(metricKey)) {
+      const revenueRate = ratioChange(totalNumeratorCurrent, totalNumeratorPrevious);
+      const spendRate = ratioChange(totalDenominatorCurrent, totalDenominatorPrevious);
+      return `当前周期「${metricKey}」为 ${currentText}，上期为 ${previousText}，变化 ${deltaText}（${changeRate >= 0 ? '+' : ''}${(changeRate * 100).toFixed(2)}%），${status === '变好' ? 'ROI 改善' : status === '变差' ? 'ROI 变差' : 'ROI 基本持平'}；付费金额变化 ${toPct(revenueRate) ?? '暂无可比结果'}，消耗变化 ${toPct(spendRate) ?? '暂无可比结果'}。`;
+    }
+    if (FUNNEL_METRICS.has(metricKey)) {
+      const numeratorRate = ratioChange(totalNumeratorCurrent, totalNumeratorPrevious);
+      const denominatorRate = ratioChange(totalDenominatorCurrent, totalDenominatorPrevious);
+      return `当前周期「${metricKey}」为 ${currentText}，上期为 ${previousText}，变化 ${deltaText}（${changeRate >= 0 ? '+' : ''}${(changeRate * 100).toFixed(2)}%）；分子变化 ${toPct(numeratorRate) ?? '暂无可比结果'}，分母变化 ${toPct(denominatorRate) ?? '暂无可比结果'}，需判断是否为分子下降或分母增长未跟上。`;
+    }
+    return `当前周期「${metricKey}」为 ${currentText}，上期为 ${previousText}，变化 ${deltaText}（${changeRate >= 0 ? '+' : ''}${(changeRate * 100).toFixed(2)}%），${metricImprovement}。`;
+  })();
+
+  const primaryLine = (() => {
+    if (!primary) return '一级下钻暂无明显集中维度，建议先查看渠道、代理与广告组分布变化。';
+    if (primaryContribution) return `一级下钻看，变化主要来自「${primary.group}=${primary.row.dimensionValue}」，贡献 ${primaryContribution}。`;
+    return `一级下钻看，「${primary.group}=${primary.row.dimensionValue}」变化最明显，但当前数据不足以计算贡献度，建议结合明细进一步确认。`;
+  })();
+
+  const secondaryLine = getSecondaryConclusion({ secondary, metricType });
+  const suggestionLine = buildActionByPath(
+    primary && secondary ? [primary.group, secondary.group] : primary ? [primary.group] : ['渠道', '广告组名称'],
+  );
+  const conclusionLines = [metricLine, primaryLine, secondaryLine, suggestionLine];
+  const conclusion = conclusionLines.join(' ');
 
   const suggestions = [
     buildActionByPath(primary ? [primary.group] : ['维度']),
@@ -311,6 +398,7 @@ export function runDiagnosis(params: {
     previousRange,
     summary: { metricKey, metricType, currentValue, previousValue, changeValue, changeRate, status, direction },
     conclusion,
+    conclusionLines,
     dimensionResults,
     suggestions,
   };
