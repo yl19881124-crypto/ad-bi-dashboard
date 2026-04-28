@@ -282,6 +282,16 @@ export default function App() {
       }),
     [rowsAfterGlobalFilters, selectedDateRange],
   );
+  const previousFilteredRowCount = useMemo(
+    () =>
+      previousRange
+        ? t0OverviewRows.filter((row) => {
+            const normalizedDate = normalizeExcelDate(row.日期);
+            return Boolean(normalizedDate && normalizedDate >= previousRange[0] && normalizedDate <= previousRange[1]);
+          }).length
+        : 0,
+    [previousRange, t0OverviewRows],
+  );
 
   const reviewDiagnosisMetric = useMemo(() => {
     if (T0_METRIC_KEYS.has(diagnosisMetric)) return diagnosisMetric;
@@ -438,6 +448,17 @@ export default function App() {
                   <span>T0 核心指标概览</span>
                   <Space>
                     <Button
+                      onClick={() => {
+                        if (!hasUploadedData) message.warning('请先上传 Excel 数据');
+                        const defaultMetric = T0_METRIC_KEYS.has(selectedMetric) ? selectedMetric : '当日付费成本';
+                        setDiagnosisMetric(defaultMetric);
+                        setDiagnosisDimensions(diagnosisAvailableDimensions);
+                        setDiagnosisOpen(true);
+                      }}
+                    >
+                      查看口径校验
+                    </Button>
+                    <Button
                       type="primary"
                       onClick={() => {
                         if (!hasUploadedData) message.warning('请先上传 Excel 数据');
@@ -556,6 +577,30 @@ export default function App() {
             </Card>
 
             <Card title={`明细表（${selectedDimension}）`} bordered={false}>
+              <Collapse
+                style={{ marginBottom: 12 }}
+                items={[
+                  {
+                    key: 'detail-formula',
+                    label: '明细表字段口径',
+                    children: (
+                      <ol style={{ margin: 0, paddingLeft: 20 }}>
+                        <li>付费量级 = SUM(当日付费人数) / 日期天数</li>
+                        <li>付费成本 = SUM(实际消耗(元)) / SUM(当日付费人数)</li>
+                        <li>日均消耗 = SUM(实际消耗(元)) / 日期天数</li>
+                        <li>付费率 = SUM(当日付费人数) / SUM(注册_登录人数)</li>
+                        <li>首日付费ROI = SUM(当日付费金额(元)) / SUM(实际消耗(元))</li>
+                        <li>直播间进入率 = SUM(进入直播间人数) / SUM(注册_登录人数)</li>
+                        <li>连麦量级 = SUM(当日连麦人数) / 日期天数</li>
+                        <li>连麦成本 = SUM(实际消耗(元)) / SUM(当日连麦人数)</li>
+                        <li>直播间➡️连麦率 = SUM(当日连麦人数) / SUM(进入直播间人数)</li>
+                        <li>付费连麦转化率 = SUM(首日付费连麦人数) / SUM(当日连麦人数)</li>
+                        <li>首次付费占比 = SUM(当日首次付费人数) / SUM(当日付费次数)</li>
+                      </ol>
+                    ),
+                  },
+                ]}
+              />
               {detailRows.length > 0 ? (
                 <DataTable rows={detailRows} splitDimensionLabel={selectedDimension} />
               ) : (
@@ -614,6 +659,15 @@ export default function App() {
           filteredRowCount: hasUploadedData ? t0OverviewRows.length : 0,
           diagnosisMetric,
           dimensionCount: diagnosisDimensions.length,
+        }}
+        validationScope={{
+          scenario: scenarioName,
+          splitDimension: selectedDimension,
+          chartMetric: selectedMetric,
+          advancedFilters: globalFilterSummary,
+          t0Filters: t0OverviewFilterSummary,
+          sheetName: parsedSheetName,
+          previousFilteredRowCount,
         }}
       />
       <ReviewSummaryDrawer
