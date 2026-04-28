@@ -44,7 +44,7 @@ const DEFAULT_SHEET_NAME = '分账户底表';
 const CORE_CARD_METRICS = ['日均付费人数', '当日付费成本', '当日付费ROI', '日均连麦人数', '当日连麦成本', '3日付费成本', '3日付费ROI', '3日付费率', '首次付费占比'];
 const ADVANCED_FILTER_FIELDS = ['渠道', '代理', '版位', '操作系统', '账户命名', '优化目标', '出价方式', '账户ID', '账户名称', '广告组ID', '广告组名称'];
 const T0_OVERVIEW_ALL = '__ALL__';
-const DIAGNOSIS_DEFAULT_DIMENSIONS = ['渠道', '代理', '版位', '操作系统', '账户命名', '优化目标', '出价方式', '账户名称', '广告组名称'];
+const DIAGNOSIS_DEFAULT_DIMENSIONS = ['渠道', '代理', '版位', '操作系统', '账户命名', '优化目标', '出价方式', '账户ID', '广告组ID'];
 
 const SCENARIOS = [
   { key: '整体付费趋势', name: '整体付费趋势', dimension: '渠道', metric: '当日付费人数' },

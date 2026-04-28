@@ -6,7 +6,6 @@ import { getMetricPrecision, getMetricTrendDirection, getMetricType } from '../c
 import { normalizeExcelDate } from './date';
 
 const EPSILON = 0.0001;
-const EVIDENCE_DIMENSIONS = ['账户命名', '广告组名称', '操作系统', '版位', '优化目标', '出价方式', '账户名称', '广告组ID'];
 const COST_METRICS = new Set(['当日付费成本', '当日连麦成本', '3日付费成本']);
 const ROI_METRICS = new Set(['当日付费ROI', '3日付费ROI']);
 const FUNNEL_METRICS = new Set([
@@ -90,6 +89,43 @@ function pickPrimaryPath(diagnosis: DiagnosisResult | null): { primary?: { dimen
     primary,
     secondary: secondary ? { dimension: secondary.dimension, value: secondary.value } : undefined,
   };
+}
+
+function pickEvidenceTopByPriority(
+  evidenceSections: ReviewEvidenceSection[],
+  preferredDimension: string,
+  fallbackDimension: string,
+) {
+  return evidenceSections.find((item) => item.dimension === preferredDimension)?.rows[0]
+    ?? evidenceSections.find((item) => item.dimension === fallbackDimension)?.rows[0];
+}
+
+function pickEvidenceDimension(
+  evidenceSections: ReviewEvidenceSection[],
+  preferredDimension: string,
+  fallbackDimension: string,
+) {
+  if (evidenceSections.some((item) => item.dimension === preferredDimension)) return preferredDimension;
+  if (evidenceSections.some((item) => item.dimension === fallbackDimension)) return fallbackDimension;
+  return '';
+}
+
+function resolveEvidenceDimensions(periodRows: Array<DataRow & { __date: string }>): string[] {
+  const hasField = (field: string) => periodRows.some((row) => row[field] !== undefined);
+  const dimensions: string[] = [];
+
+  if (hasField('账户命名')) dimensions.push('账户命名');
+  if (hasField('账户ID')) dimensions.push('账户ID');
+  else if (hasField('账户名称')) dimensions.push('账户名称');
+
+  if (hasField('广告组ID')) dimensions.push('广告组ID');
+  else if (hasField('广告组名称')) dimensions.push('广告组名称');
+
+  ['操作系统', '版位', '优化目标', '出价方式'].forEach((dimension) => {
+    if (hasField(dimension)) dimensions.push(dimension);
+  });
+
+  return dimensions;
 }
 
 function buildCoreConclusions(overviewItems: ReviewOverviewItem[], diagnosis: DiagnosisResult | null): string[] {
@@ -208,7 +244,7 @@ export function findEvidenceForReviewSummary(params: {
     };
   }
 
-  const availableDimensions = EVIDENCE_DIMENSIONS.filter((dimension) => periodRows.some((row) => row[dimension] !== undefined));
+  const availableDimensions = resolveEvidenceDimensions(periodRows);
 
   const evidenceSections: ReviewEvidenceSection[] = availableDimensions.map((dimension) => {
     const grouped = new Map<string, { nc: number; np: number; dc: number; dp: number }>();
@@ -327,12 +363,14 @@ function buildActionItems(
   const actions = new Set<string>();
   const isWorse = (metric: string) => overviewItems.some((item) => item.metricKey === metric && item.status === '变差');
 
-  const accountTop = evidence.evidenceSections.find((item) => item.dimension === '账户命名')?.rows[0];
-  const adgroupTop = evidence.evidenceSections.find((item) => item.dimension === '广告组名称')?.rows[0];
+  const accountTop = pickEvidenceTopByPriority(evidence.evidenceSections, '账户ID', '账户名称');
+  const adgroupTop = pickEvidenceTopByPriority(evidence.evidenceSections, '广告组ID', '广告组名称');
+  const accountDimension = accountTop ? pickEvidenceDimension(evidence.evidenceSections, '账户ID', '账户名称') : '';
+  const adgroupDimension = adgroupTop ? pickEvidenceDimension(evidence.evidenceSections, '广告组ID', '广告组名称') : '';
   const concretePath = [
     ...evidence.keyPathFilters.map((item) => `${item.dimension}=${item.value}`),
-    accountTop ? `账户命名=${accountTop.dimensionValue}` : '',
-    adgroupTop ? `广告组名称=${adgroupTop.dimensionValue}` : '',
+    accountTop ? `${accountDimension}=${accountTop.dimensionValue}` : '',
+    adgroupTop ? `${adgroupDimension}=${adgroupTop.dimensionValue}` : '',
   ].filter(Boolean).join(' + ');
 
   if (concretePath) {
@@ -340,7 +378,7 @@ function buildActionItems(
   }
 
   if (!adgroupTop && accountTop) {
-    actions.add(`当前路径下广告组分布较分散，建议优先查看账户命名「${accountTop.dimensionValue}」下的 Top 5 广告组。`);
+    actions.add(`当前路径下广告组分布较分散，建议优先查看${accountDimension}「${accountTop.dimensionValue}」下的 Top 5 广告组ID。`);
   }
 
   if (isWorse('当日付费人数') || metricKey === '当日付费人数') {
@@ -350,7 +388,7 @@ function buildActionItems(
     actions.add('成本类指标建议检查消耗是否上涨但付费人数未同步增长，并核对出价和预算是否放量。');
   }
   if (isWorse('当日付费ROI') || isWorse('3日付费ROI') || ROI_METRICS.has(metricKey)) {
-    actions.add('ROI 类指标建议检查付费金额变化、高消耗低回收广告组以及付费转化和客单价变化。');
+    actions.add('ROI 类指标建议检查付费金额变化、高消耗低回收广告组ID以及付费转化和客单价变化。');
   }
   if (isWorse('3日付费率') || FUNNEL_METRICS.has(metricKey)) {
     actions.add('漏斗率类指标建议按漏斗环节逐段检查：入口流量、直播间承接、连麦和付费转化。');
@@ -359,7 +397,7 @@ function buildActionItems(
   diagnosis?.suggestions?.forEach((item) => actions.add(item));
 
   if (actions.size === 0) {
-    actions.add('当前指标整体稳定，建议持续观察重点渠道与广告组，并进行小步测试。');
+    actions.add('当前指标整体稳定，建议持续观察重点渠道与广告组ID，并进行小步测试。');
   }
 
   return Array.from(actions).slice(0, 6);
