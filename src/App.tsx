@@ -1,9 +1,8 @@
 import { useMemo, useState } from 'react';
-import { Alert, Button, Card, Descriptions, Empty, Layout, Space, Typography, Upload, message } from 'antd';
+import { Alert, Button, Card, Collapse, Descriptions, Empty, Layout, Space, Table, Typography, Upload, message } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
 import type { UploadProps } from 'antd';
 import type { RcFile } from 'antd/es/upload';
-import type { Dayjs } from 'dayjs';
-import dayjs from 'dayjs';
 import { UploadOutlined } from '@ant-design/icons';
 import * as XLSX from 'xlsx';
 import ConfigBar from './components/ConfigBar';
@@ -36,6 +35,13 @@ const FIXED_DIMENSION_FIELDS = [
 
 const dateNamePattern = /(日期|时间|date|day)/i;
 const invalidFieldPattern = /^(字段\d+|未命名字段\d+|column\d+|col\d+|unnamed:?\s*\d*)$/i;
+
+type DateDebugRow = {
+  key: string;
+  rawValue: string;
+  rawType: string;
+  normalizedDate: string;
+};
 
 function uniqList(list: string[]) {
   return Array.from(new Set(list));
@@ -84,7 +90,7 @@ function parseWorksheet(file: RcFile) {
   return file.arrayBuffer().then((buffer: ArrayBuffer) => {
     const workbook = XLSX.read(buffer, {
       type: 'array',
-      cellDates: true,
+      cellDates: false,
     });
 
     let sheetName = DEFAULT_SHEET_NAME;
@@ -94,25 +100,25 @@ function parseWorksheet(file: RcFile) {
     }
 
     const worksheet = workbook.Sheets[sheetName];
-    const matrix = XLSX.utils.sheet_to_json<(string | number | Date | null)[]>(worksheet, {
+    const matrix = XLSX.utils.sheet_to_json<(string | number | null)[]>(worksheet, {
       header: 1,
       raw: true,
-      defval: null,
+      defval: '',
     });
 
     const [headerRow = [], ...bodyRows] = matrix;
 
-    const rawHeaders = headerRow.map((item: string | number | Date | null) => String(item ?? '').trim());
+    const rawHeaders = headerRow.map((item: string | number | null) => String(item ?? '').trim());
     const validHeaders = uniqList(rawHeaders.filter((header: string) => !isMeaninglessHeader(header)));
 
     const rows: DataRow[] = bodyRows
-      .map((row: (string | number | Date | null)[]) => {
+      .map((row: (string | number | null)[]) => {
         const mappedRow: DataRow = {};
 
         validHeaders.forEach((header: string) => {
           const sourceIndex = rawHeaders.indexOf(header);
           const cellValue = row[sourceIndex];
-          mappedRow[header] = cellValue === undefined ? null : (cellValue as string | number | null);
+          mappedRow[header] = cellValue === undefined || cellValue === '' ? null : (cellValue as string | number | null);
         });
 
         return mappedRow;
@@ -154,11 +160,23 @@ function parseWorksheet(file: RcFile) {
       return normalizedRow;
     });
 
+    const dateDebugRows: DateDebugRow[] = normalizedRows.slice(0, 10).map((row, index) => {
+      const rawDateValue = dateField ? row[dateField] : row.日期;
+      const rawType = rawDateValue === null ? 'null' : Array.isArray(rawDateValue) ? 'array' : typeof rawDateValue;
+      return {
+        key: `${index}`,
+        rawValue: rawDateValue === null || rawDateValue === undefined ? '' : String(rawDateValue),
+        rawType,
+        normalizedDate: normalizeExcelDate(rawDateValue) || '-',
+      };
+    });
+
     return {
       rows: normalizedRows,
       dimensions,
       metrics: uniqList(metricFields),
       sheetName,
+      dateDebugRows,
     };
   });
 }
@@ -187,10 +205,11 @@ export default function App() {
   const [metricFields, setMetricFields] = useState<MetricField[]>(defaultMetrics);
   const [parsedSheetName, setParsedSheetName] = useState(DEFAULT_SHEET_NAME);
   const [hasUploadedData, setHasUploadedData] = useState(false);
+  const [dateDebugRows, setDateDebugRows] = useState<DateDebugRow[]>([]);
 
   const [selectedDimension, setSelectedDimension] = useState('版位');
   const [selectedMetric, setSelectedMetric] = useState('当日付费人数');
-  const [selectedDateRange, setSelectedDateRange] = useState<[Dayjs, Dayjs] | null>([dayjs('2026-04-20'), dayjs('2026-04-26')]);
+  const [selectedDateRange, setSelectedDateRange] = useState<[string, string] | null>(['2026-04-20', '2026-04-26']);
 
   const uploadProps: UploadProps = useMemo(
     () => ({
@@ -211,6 +230,7 @@ export default function App() {
           setRows(parsed.rows);
           setHasUploadedData(true);
           setParsedSheetName(parsed.sheetName);
+          setDateDebugRows(parsed.dateDebugRows);
           setDimensionFields(parsedDimensions);
           setMetricFields(parsedMetrics);
 
@@ -235,16 +255,33 @@ export default function App() {
     () => aggregateRowsByDateAndDimension({ rows, splitDimension: selectedDimension, metricKey: selectedMetric, dateRange: selectedDateRange }),
     [rows, selectedDimension, selectedMetric, selectedDateRange],
   );
+
   const trendChartKey = useMemo(
     () =>
       JSON.stringify({
         splitDimension: selectedDimension,
         metric: selectedMetric,
-        dateRange: selectedDateRange?.map((item) => item.format('YYYY-MM-DD')) ?? null,
+        dateRange: selectedDateRange,
         rowCount: aggregatedResult.rows.length,
         series: aggregatedResult.series,
       }),
     [selectedDimension, selectedMetric, selectedDateRange, aggregatedResult.rows.length, aggregatedResult.series],
+  );
+
+  const previewColumns: ColumnsType<DataRow> = useMemo(() => {
+    const visibleFields = dimensionFields.map((field) => field.key).concat(metricFields.map((field) => field.key)).slice(0, 8);
+    return visibleFields.map((field) => ({
+      title: field,
+      dataIndex: field,
+      key: field,
+      width: 140,
+      render: (value: string | number | null) => (field === '日期' ? normalizeExcelDate(value) || '-' : value ?? '-'),
+    }));
+  }, [dimensionFields, metricFields]);
+
+  const previewRows = useMemo(
+    () => rows.slice(0, 10).map((row, index) => ({ key: `${index}`, ...row })),
+    [rows],
   );
 
   const currentMetricType = getMetricType(selectedMetric);
@@ -314,11 +351,45 @@ export default function App() {
             </Card>
 
             <Card title="上传解析结果" bordered={false}>
-              <Descriptions size="small" column={3} bordered>
-                <Descriptions.Item label="总行数">{rows.length}</Descriptions.Item>
-                <Descriptions.Item label="总字段数">{dimensionFields.length + metricFields.length}</Descriptions.Item>
-                <Descriptions.Item label="当前 Sheet">{parsedSheetName}</Descriptions.Item>
-              </Descriptions>
+              <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                <Descriptions size="small" column={3} bordered>
+                  <Descriptions.Item label="总行数">{rows.length}</Descriptions.Item>
+                  <Descriptions.Item label="总字段数">{dimensionFields.length + metricFields.length}</Descriptions.Item>
+                  <Descriptions.Item label="当前 Sheet">{parsedSheetName}</Descriptions.Item>
+                </Descriptions>
+
+                <Card size="small" title="数据预览（前 10 行）" bordered>
+                  <Table
+                    columns={previewColumns}
+                    dataSource={previewRows}
+                    pagination={false}
+                    scroll={{ x: 'max-content' }}
+                    size="small"
+                  />
+                </Card>
+
+                <Collapse
+                  items={[
+                    {
+                      key: 'date-debug',
+                      label: '日期解析调试（前 10 行）',
+                      children: (
+                        <Table<DateDebugRow>
+                          rowKey="key"
+                          columns={[
+                            { title: '原始值', dataIndex: 'rawValue', key: 'rawValue', width: 220 },
+                            { title: '类型', dataIndex: 'rawType', key: 'rawType', width: 120 },
+                            { title: '解析后', dataIndex: 'normalizedDate', key: 'normalizedDate', width: 180 },
+                          ]}
+                          dataSource={dateDebugRows}
+                          pagination={false}
+                          size="small"
+                        />
+                      ),
+                    },
+                  ]}
+                />
+              </Space>
             </Card>
           </Space>
         </Content>
