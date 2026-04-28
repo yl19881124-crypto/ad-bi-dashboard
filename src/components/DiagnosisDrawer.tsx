@@ -16,6 +16,13 @@ interface Props {
   currentRangeText: string;
   previousRangeText: string;
   result: DiagnosisResult | null;
+  emptyMessage: string;
+  debugInfo: {
+    rawRowCount: number;
+    filteredRowCount: number;
+    diagnosisMetric: string;
+    dimensionCount: number;
+  };
 }
 
 export default function DiagnosisDrawer(props: Props) {
@@ -30,6 +37,8 @@ export default function DiagnosisDrawer(props: Props) {
     currentRangeText,
     previousRangeText,
     result,
+    emptyMessage,
+    debugInfo,
   } = props;
 
   const columns: ColumnsType<NonNullable<DiagnosisResult['dimensionResults']>[number]['rows'][number]> = useMemo(
@@ -88,8 +97,17 @@ export default function DiagnosisDrawer(props: Props) {
           </Space>
         </Card>
 
+        <Card size="small" title="诊断状态">
+          <Descriptions bordered size="small" column={2}>
+            <Descriptions.Item label="当前原始数据行数">{debugInfo.rawRowCount}</Descriptions.Item>
+            <Descriptions.Item label="当前筛选后行数">{debugInfo.filteredRowCount}</Descriptions.Item>
+            <Descriptions.Item label="当前诊断指标">{debugInfo.diagnosisMetric}</Descriptions.Item>
+            <Descriptions.Item label="当前下钻维度数量">{debugInfo.dimensionCount}</Descriptions.Item>
+          </Descriptions>
+        </Card>
+
         {!result ? (
-          <Empty description="暂无可诊断数据" />
+          <Empty description={emptyMessage} />
         ) : result.error ? (
           <Alert type="warning" showIcon message={result.error} />
         ) : (
