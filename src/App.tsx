@@ -25,12 +25,15 @@ import { UploadOutlined } from '@ant-design/icons';
 import * as XLSX from 'xlsx';
 import ConfigBar from './components/ConfigBar';
 import DataTable from './components/DataTable';
+import DiagnosisDrawer from './components/DiagnosisDrawer';
 import FieldPanel from './components/FieldPanel';
 import TrendChart from './components/TrendChart';
 import { getMetricTrendDirection, T0_METRIC_CONFIGS, T0_METRIC_KEYS, getMetricType } from './config/metricConfig';
 import { dimensionFields as defaultDimensions, metricFields as defaultMetrics, mockRows } from './mock/data';
 import type { DataRow, DimensionField, MetricField } from './types';
+import type { DiagnosisResult } from './types/diagnosis';
 import { aggregateRowsByDateAndDimension, calculateMetricByRange, filterRows, formatMetricValue, getFilterOptions } from './utils/aggregation';
+import { runDiagnosis } from './utils/diagnosis';
 import { normalizeExcelDate } from './utils/date';
 
 const { Header, Sider, Content } = Layout;
@@ -38,6 +41,7 @@ const DEFAULT_SHEET_NAME = '分账户底表';
 const CORE_CARD_METRICS = ['当日付费人数', '当日付费成本', '当日付费ROI', '3日付费成本', '3日付费ROI', '3日付费率'];
 const ADVANCED_FILTER_FIELDS = ['渠道', '代理', '版位', '操作系统', '账户命名', '优化目标', '出价方式', '账户ID', '账户名称', '广告组ID', '广告组名称'];
 const T0_OVERVIEW_ALL = '__ALL__';
+const DIAGNOSIS_DEFAULT_DIMENSIONS = ['渠道', '代理', '版位', '操作系统', '账户命名', '优化目标', '出价方式', '广告组名称'];
 
 const SCENARIOS = [
   { key: '整体付费趋势', name: '整体付费趋势', dimension: '渠道', metric: '当日付费人数' },
@@ -153,6 +157,9 @@ export default function App() {
   const [selectedFilters, setSelectedFilters] = useState<Record<string, string[]>>({});
   const [t0OverviewFilterField, setT0OverviewFilterField] = useState(T0_OVERVIEW_ALL);
   const [t0OverviewFilterValues, setT0OverviewFilterValues] = useState<string[]>([]);
+  const [diagnosisOpen, setDiagnosisOpen] = useState(false);
+  const [diagnosisMetric, setDiagnosisMetric] = useState('当日付费人数');
+  const [diagnosisDimensions, setDiagnosisDimensions] = useState<string[]>([]);
 
   const filterOptions = useMemo(() => getFilterOptions(rows, ADVANCED_FILTER_FIELDS), [rows]);
   const availableT0FilterFields = useMemo(
@@ -223,6 +230,20 @@ export default function App() {
   );
 
   const previousRange = useMemo(() => getPreviousPeriod(selectedDateRange), [selectedDateRange]);
+  const diagnosisAvailableDimensions = useMemo(
+    () => DIAGNOSIS_DEFAULT_DIMENSIONS.filter((field) => filterOptions[field]),
+    [filterOptions],
+  );
+  const diagnosisResult: DiagnosisResult | null = useMemo(
+    () =>
+      runDiagnosis({
+        rows: t0OverviewRows,
+        metricKey: diagnosisMetric,
+        currentRange: selectedDateRange,
+        dimensions: diagnosisDimensions,
+      }),
+    [t0OverviewRows, diagnosisMetric, selectedDateRange, diagnosisDimensions],
+  );
 
   const overviewCards = useMemo(() => {
     return CORE_CARD_METRICS.map((metricKey) => {
@@ -372,6 +393,19 @@ export default function App() {
                 )}
               </Space>
               <div style={{ overflowX: 'auto' }}>
+                <Space style={{ marginBottom: 12 }}>
+                  <Button
+                    type="primary"
+                    onClick={() => {
+                      const defaultMetric = T0_METRIC_KEYS.has(selectedMetric) ? selectedMetric : '当日付费成本';
+                      setDiagnosisMetric(defaultMetric);
+                      setDiagnosisDimensions(diagnosisAvailableDimensions);
+                      setDiagnosisOpen(true);
+                    }}
+                  >
+                    诊断 T0 指标
+                  </Button>
+                </Space>
                 <Row gutter={[12, 12]} wrap>
                   {overviewCards.map((item) => (
                     <Col key={item.key} xs={24} sm={12} md={8} lg={6}>
@@ -451,6 +485,18 @@ export default function App() {
           </Space>
         </Content>
       </Layout>
+      <DiagnosisDrawer
+        open={diagnosisOpen}
+        onClose={() => setDiagnosisOpen(false)}
+        diagnosisMetric={diagnosisMetric}
+        onDiagnosisMetricChange={setDiagnosisMetric}
+        diagnosisDimensions={diagnosisDimensions}
+        onDiagnosisDimensionsChange={setDiagnosisDimensions}
+        availableDimensions={diagnosisAvailableDimensions}
+        currentRangeText={selectedDateRange ? `${selectedDateRange[0]} 至 ${selectedDateRange[1]}` : '-'}
+        previousRangeText={previousRange ? `${previousRange[0]} 至 ${previousRange[1]}` : '-'}
+        result={diagnosisResult}
+      />
     </Layout>
   );
 }
