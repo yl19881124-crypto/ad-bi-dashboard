@@ -6,7 +6,7 @@ import { normalizeExcelDate } from './date';
 
 const EPSILON = 0.0001;
 const SMALL_SAMPLE_THRESHOLD = 20;
-const SECONDARY_DIMENSIONS = ['渠道', '代理', '版位', '操作系统', '账户命名', '优化目标', '出价方式', '账户名称', '广告组名称'];
+const SECONDARY_DIMENSIONS = ['渠道', '代理', '版位', '操作系统', '账户命名', '优化目标', '出价方式', '账户ID', '广告组ID'];
 
 const COST_METRICS = new Set(['当日付费成本', '当日连麦成本', '3日付费成本']);
 const ROI_METRICS = new Set(['当日付费ROI', '3日付费ROI']);
@@ -119,13 +119,21 @@ function buildFormulaReason(metricKey: string, nc: number, np: number, dc: numbe
 function buildActionByPath(path: string[]) {
   const pathText = path.join(' + ');
   if (path.includes('渠道') && path.includes('代理')) {
-    return `建议优先排查「${pathText}」下的账户命名和广告组，重点查看消耗、付费人数、付费成本、ROI、素材变化、预算调整和转化回传。`;
+    return `建议优先排查「${pathText}」下的账户命名、账户ID和广告组ID，重点查看消耗、付费人数、付费成本、ROI、素材变化、预算调整和转化回传。`;
   }
   if (path.includes('操作系统')) return `建议重点对比「${pathText}」下的素材点击率、落地页进入、直播间承接和付费转化。`;
-  if (path.includes('广告组名称')) return `建议优先查看「${pathText}」近期是否存在预算调整、出价变化、素材衰退、计划暂停或回传异常。`;
+  if (path.includes('广告组ID')) return `建议优先查看「${pathText}」近期是否存在预算调整、出价变化、素材衰退、计划暂停或回传异常。`;
+  if (path.includes('广告组名称')) return `建议优先查看「${pathText}」对应广告组近期是否存在预算调整、出价变化、素材衰退、计划暂停或回传异常。`;
   if (path.includes('渠道')) return `优先检查「${pathText}」下的消耗、人数与 ROI 是否同步变化。`;
-  if (path.includes('账户命名') || path.includes('账户名称')) return `检查 ${pathText} 是否存在预算调整、计划暂停或素材衰退`;
-  return `围绕 ${pathText} 继续逐层排查关键账户与广告组`;
+  if (path.includes('账户命名') || path.includes('账户ID') || path.includes('账户名称')) return `检查 ${pathText} 是否存在预算调整、计划暂停或素材衰退`;
+  return `围绕 ${pathText} 继续逐层排查关键账户ID与广告组ID`;
+}
+
+function resolveDrillDimensions(fieldKeys: Set<string>): string[] {
+  const dimensions = SECONDARY_DIMENSIONS.filter((dimension) => fieldKeys.has(dimension));
+  if (!fieldKeys.has('账户ID') && fieldKeys.has('账户名称')) dimensions.push('账户名称');
+  if (!fieldKeys.has('广告组ID') && fieldKeys.has('广告组名称')) dimensions.push('广告组名称');
+  return dimensions;
 }
 
 export function runDiagnosis(params: {
@@ -202,7 +210,7 @@ export function runDiagnosis(params: {
   const changeRate = currentValue !== null && previousValue !== null && previousValue !== 0 ? (currentValue - previousValue) / previousValue : null;
   const status = getStatus(changeRate, direction);
 
-  const allDrillDimensions = SECONDARY_DIMENSIONS.filter((dimension) => fieldKeys.has(dimension));
+  const allDrillDimensions = resolveDrillDimensions(fieldKeys);
 
   const buildGroupedRows = (
     targetCurrentRows: PeriodRow[],
@@ -375,22 +383,22 @@ export function runDiagnosis(params: {
   })();
 
   const primaryLine = (() => {
-    if (!primary) return '一级下钻暂无明显集中维度，建议先查看渠道、代理与广告组分布变化。';
+    if (!primary) return '一级下钻暂无明显集中维度，建议先查看渠道、代理与广告组ID分布变化。';
     if (primaryContribution) return `一级下钻看，变化主要来自「${primary.group}=${primary.row.dimensionValue}」，贡献 ${primaryContribution}。`;
     return `一级下钻看，「${primary.group}=${primary.row.dimensionValue}」变化最明显，但当前数据不足以计算贡献度，建议结合明细进一步确认。`;
   })();
 
   const secondaryLine = getSecondaryConclusion({ secondary, metricType });
   const suggestionLine = buildActionByPath(
-    primary && secondary ? [primary.group, secondary.group] : primary ? [primary.group] : ['渠道', '广告组名称'],
+    primary && secondary ? [primary.group, secondary.group] : primary ? [primary.group] : ['渠道', '广告组ID'],
   );
   const conclusionLines = [metricLine, primaryLine, secondaryLine, suggestionLine];
   const conclusion = conclusionLines.join(' ');
 
   const suggestions = [
     buildActionByPath(primary ? [primary.group] : ['维度']),
-    buildActionByPath(primary && secondary ? [primary.group, secondary.group] : ['渠道', '广告组名称']),
-    '优先核查关键路径下账户命名、广告组、预算与素材变化',
+    buildActionByPath(primary && secondary ? [primary.group, secondary.group] : ['渠道', '广告组ID']),
+    '优先核查关键路径下账户命名、账户ID、广告组ID、预算与素材变化',
   ];
 
   return {
