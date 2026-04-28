@@ -19,7 +19,6 @@ export const metricFields: MetricField[] = [
   { key: '注册_登录人数', name: '注册_登录人数', tag: 'T1' },
   { key: '连麦落地页到达人数', name: '连麦落地页到达人数', tag: 'T1' },
   { key: '进入直播间人数', name: '进入直播间人数', tag: 'T1' },
-  { key: '当日连麦人数', name: '当日连麦人数', tag: 'T1' },
   { key: '首日付费连麦人数', name: '首日付费连麦人数', tag: 'T1' },
 ];
 

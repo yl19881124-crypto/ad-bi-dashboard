@@ -47,6 +47,7 @@ export default function DiagnosisDrawer(props: Props) {
       { title: '当前周期指标值', dataIndex: 'currentMetric', key: 'currentMetric', render: (value) => formatMetricValue(value, result?.summary.metricType ?? 'number') },
       { title: '上一周期指标值', dataIndex: 'previousMetric', key: 'previousMetric', render: (value) => formatMetricValue(value, result?.summary.metricType ?? 'number') },
       { title: '变化率', dataIndex: 'changeRate', key: 'changeRate', render: (value) => formatMetricValue(value, 'percent') },
+      { title: '贡献度', dataIndex: 'contribution', key: 'contribution', render: (value) => formatMetricValue(value, 'percent') },
       { title: '分子当前值', dataIndex: 'numeratorCurrent', key: 'numeratorCurrent', render: (value) => value.toFixed(2) },
       { title: '分子上期值', dataIndex: 'numeratorPrevious', key: 'numeratorPrevious', render: (value) => value.toFixed(2) },
       { title: '分母当前值', dataIndex: 'denominatorCurrent', key: 'denominatorCurrent', render: (value) => value.toFixed(2) },
@@ -63,6 +64,22 @@ export default function DiagnosisDrawer(props: Props) {
         ),
       },
       { title: '建议动作', dataIndex: 'action', key: 'action', width: 220 },
+    ],
+    [result?.summary.metricType],
+  );
+
+  const secondaryColumns: ColumnsType<NonNullable<NonNullable<DiagnosisResult['dimensionResults']>[number]['rows'][number]['secondaryResults']>[number]['rows'][number]> = useMemo(
+    () => [
+      { title: '维度值', dataIndex: 'dimensionValue', key: 'dimensionValue', width: 140 },
+      { title: '当前周期指标值', dataIndex: 'currentMetric', key: 'currentMetric', render: (value) => formatMetricValue(value, result?.summary.metricType ?? 'number') },
+      { title: '上一周期指标值', dataIndex: 'previousMetric', key: 'previousMetric', render: (value) => formatMetricValue(value, result?.summary.metricType ?? 'number') },
+      { title: '变化率', dataIndex: 'changeRate', key: 'changeRate', render: (value) => formatMetricValue(value, 'percent') },
+      { title: '分子当前值', dataIndex: 'numeratorCurrent', key: 'numeratorCurrent', render: (value) => value.toFixed(2) },
+      { title: '分子上期值', dataIndex: 'numeratorPrevious', key: 'numeratorPrevious', render: (value) => value.toFixed(2) },
+      { title: '分母当前值', dataIndex: 'denominatorCurrent', key: 'denominatorCurrent', render: (value) => value.toFixed(2) },
+      { title: '分母上期值', dataIndex: 'denominatorPrevious', key: 'denominatorPrevious', render: (value) => value.toFixed(2) },
+      { title: '贡献度', dataIndex: 'contribution', key: 'contribution', render: (value) => formatMetricValue(value, 'percent') },
+      { title: '具体判断原因', dataIndex: 'reason', key: 'reason', width: 340 },
     ],
     [result?.summary.metricType],
   );
@@ -140,6 +157,34 @@ export default function DiagnosisDrawer(props: Props) {
                       dataSource={item.rows}
                       pagination={{ pageSize: 8 }}
                       scroll={{ x: 1500 }}
+                      expandable={{
+                        expandedRowRender: (row) =>
+                          row.secondaryResults && row.secondaryResults.length > 0 ? (
+                            <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                              <Typography.Text strong>{`${item.dimension} = ${row.dimensionValue} 的二级下钻分析`}</Typography.Text>
+                              <Tabs
+                                items={row.secondaryResults.map((sub) => ({
+                                  key: `${row.key}-${sub.dimension}`,
+                                  label: `按${sub.dimension}下钻`,
+                                  children: (
+                                    <Table
+                                      size="small"
+                                      rowKey="key"
+                                      columns={secondaryColumns}
+                                      dataSource={sub.rows}
+                                      pagination={false}
+                                      scroll={{ x: 1400 }}
+                                    />
+                                  ),
+                                }))}
+                              />
+                            </Space>
+                          ) : (
+                            <Typography.Text type="secondary">暂无可用二级下钻结果</Typography.Text>
+                          ),
+                        rowExpandable: (row) => Boolean(row.secondaryResults && row.secondaryResults.length > 0),
+                        expandRowByClick: false,
+                      }}
                     />
                   ),
                 }))}
