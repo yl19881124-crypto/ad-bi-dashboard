@@ -28,6 +28,7 @@ interface GroupState {
   date: string;
   splitValue: string;
   sums: Record<string, number>;
+  days: Set<string>;
 }
 
 const UNKNOWN_SPLIT_VALUE = '未知';
@@ -61,13 +62,17 @@ function inDateRange(date: string, dateRange?: [string, string] | null): boolean
   return date >= start && date <= end;
 }
 
-function resolveMetricValue(metricKey: string, sums: Record<string, number>): number | null {
+function resolveMetricValue(metricKey: string, sums: Record<string, number>, dayCount: number): number | null {
   const config: MetricConfig | undefined = metricConfigMap.get(metricKey);
   if (!config) {
     const fallback = sums[metricKey] ?? 0;
     return Number.isFinite(fallback) ? fallback : null;
   }
   if (config.mode === 'source') return sums[config.sourceField] ?? 0;
+  if (config.mode === 'daily_average_source') {
+    if (!Number.isFinite(dayCount) || dayCount <= 0) return null;
+    return (sums[config.sourceField] ?? 0) / dayCount;
+  }
 
   const numerator = sums[config.numerator] ?? 0;
   const denominator = sums[config.denominator] ?? 0;
@@ -86,6 +91,7 @@ function mergeGroupState(target: GroupState, source: GroupState) {
   Object.entries(source.sums).forEach(([field, value]) => {
     target.sums[field] = (target.sums[field] ?? 0) + value;
   });
+  source.days.forEach((day) => target.days.add(day));
 }
 
 function doesRowMatchFilters(row: DataRow, filters: FilterSelections): boolean {
@@ -121,16 +127,20 @@ export function getFilterOptions(rows: DataRow[], fields: string[]): Record<stri
 
 function buildMetricSums(rows: DataRow[], dateRange?: [string, string] | null): Record<string, number> {
   const sums: Record<string, number> = {};
+  const days = new Set<string>();
   rows.forEach((row) => {
     const date = normalizeDate(row.日期);
     if (!inDateRange(date, dateRange)) return;
+    days.add(date);
     collectNumericSums(row, sums);
   });
+  sums.__dayCount__ = days.size;
   return sums;
 }
 
 export function calculateMetricByRange(rows: DataRow[], metricKey: string, dateRange?: [string, string] | null): number | null {
-  return resolveMetricValue(metricKey, buildMetricSums(rows, dateRange));
+  const sums = buildMetricSums(rows, dateRange);
+  return resolveMetricValue(metricKey, sums, sums.__dayCount__ ?? 0);
 }
 
 export function aggregateRowsByDateAndDimension({ rows, splitDimension, metricKey, dateRange, filters = {}, maxSeries = 10 }: AggregationOptions) {
@@ -147,20 +157,22 @@ export function aggregateRowsByDateAndDimension({ rows, splitDimension, metricKe
     const key = buildGroupKey(date, splitValue);
 
     if (!baseGroups.has(key)) {
-      baseGroups.set(key, { date, splitValue, sums: {} });
+      baseGroups.set(key, { date, splitValue, sums: {}, days: new Set<string>() });
     }
 
-    collectNumericSums(row, baseGroups.get(key)!.sums);
+    const group = baseGroups.get(key)!;
+    group.days.add(date);
+    collectNumericSums(row, group.sums);
   });
 
   const totalsBySplit = new Map<string, GroupState>();
   baseGroups.forEach((group) => {
-    if (!totalsBySplit.has(group.splitValue)) totalsBySplit.set(group.splitValue, { date: 'TOTAL', splitValue: group.splitValue, sums: {} });
+    if (!totalsBySplit.has(group.splitValue)) totalsBySplit.set(group.splitValue, { date: 'TOTAL', splitValue: group.splitValue, sums: {}, days: new Set<string>() });
     mergeGroupState(totalsBySplit.get(group.splitValue)!, group);
   });
 
   const rankedSplitValues = Array.from(totalsBySplit.values())
-    .map((group) => ({ splitValue: group.splitValue, value: resolveMetricValue(metricKey, group.sums) ?? 0 }))
+    .map((group) => ({ splitValue: group.splitValue, value: resolveMetricValue(metricKey, group.sums, group.days.size) ?? 0 }))
     .sort((a, b) => b.value - a.value)
     .map((item) => item.splitValue);
 
@@ -173,7 +185,7 @@ export function aggregateRowsByDateAndDimension({ rows, splitDimension, metricKe
     if (normalizedSplit === OTHER_SPLIT_VALUE && !needOthers) return;
 
     const key = buildGroupKey(group.date, normalizedSplit);
-    if (!mergedGroups.has(key)) mergedGroups.set(key, { date: group.date, splitValue: normalizedSplit, sums: {} });
+    if (!mergedGroups.has(key)) mergedGroups.set(key, { date: group.date, splitValue: normalizedSplit, sums: {}, days: new Set<string>() });
     mergeGroupState(mergedGroups.get(key)!, group);
   });
 
@@ -181,11 +193,11 @@ export function aggregateRowsByDateAndDimension({ rows, splitDimension, metricKe
     .map((group) => ({
       日期: group.date,
       拆分维度: group.splitValue,
-      指标值: resolveMetricValue(metricKey, group.sums),
-      当日付费人数: resolveMetricValue('当日付费人数', group.sums),
-      当日付费成本: resolveMetricValue('当日付费成本', group.sums),
-      当日付费ROI: resolveMetricValue('当日付费ROI', group.sums),
-      '3日付费率': resolveMetricValue('3日付费率', group.sums),
+      指标值: resolveMetricValue(metricKey, group.sums, group.days.size),
+      当日付费人数: resolveMetricValue('当日付费人数', group.sums, group.days.size),
+      当日付费成本: resolveMetricValue('当日付费成本', group.sums, group.days.size),
+      当日付费ROI: resolveMetricValue('当日付费ROI', group.sums, group.days.size),
+      '3日付费率': resolveMetricValue('3日付费率', group.sums, group.days.size),
     }))
     .sort((a, b) => {
       if (a.日期 === b.日期) return a.拆分维度.localeCompare(b.拆分维度, 'zh-CN');

@@ -2,7 +2,7 @@ import { metricConfigMap } from '../config/metricConfig';
 import type { DataRow } from '../types';
 import type { DiagnosisDimensionRow, DiagnosisResult } from '../types/diagnosis';
 import type { ReviewContext, ReviewDragItem, ReviewEvidenceRow, ReviewEvidenceSection, ReviewOverviewItem, ReviewSummaryData } from '../types/reviewSummary';
-import { getMetricTrendDirection, getMetricType } from '../config/metricConfig';
+import { getMetricPrecision, getMetricTrendDirection, getMetricType } from '../config/metricConfig';
 import { normalizeExcelDate } from './date';
 
 const EPSILON = 0.0001;
@@ -29,9 +29,11 @@ function formatValue(value: number | null, type: ReviewOverviewItem['type']): st
 
 function formatGeneralValue(value: number | null, metricKey: string): string {
   const type = getMetricType(metricKey);
+  const precision = getMetricPrecision(metricKey);
   if (value === null || !Number.isFinite(value)) return '暂无数据';
   if (type === 'percent') return `${(value * 100).toFixed(2)}%`;
   if (type === 'currency') return value.toFixed(2);
+  if (precision > 0) return value.toFixed(precision);
   return `${Math.round(value)}`;
 }
 

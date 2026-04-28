@@ -29,7 +29,7 @@ import DiagnosisDrawer from './components/DiagnosisDrawer';
 import FieldPanel from './components/FieldPanel';
 import ReviewSummaryDrawer from './components/ReviewSummaryDrawer';
 import TrendChart from './components/TrendChart';
-import { T0_METRIC_CONFIGS, T0_METRIC_KEYS, getMetricType } from './config/metricConfig';
+import { T0_METRIC_CONFIGS, T0_METRIC_KEYS, getMetricPrecision, getMetricType } from './config/metricConfig';
 import { dimensionFields as defaultDimensions, metricFields as defaultMetrics, mockRows } from './mock/data';
 import type { DataRow, DimensionField, MetricField } from './types';
 import type { DiagnosisResult } from './types/diagnosis';
@@ -41,7 +41,7 @@ import { buildMarkdownFileName, generateReviewSummary, getOverviewStatus } from 
 
 const { Header, Sider, Content } = Layout;
 const DEFAULT_SHEET_NAME = '分账户底表';
-const CORE_CARD_METRICS = ['当日付费人数', '当日付费成本', '当日付费ROI', '当日连麦人数', '当日连麦成本', '3日付费成本', '3日付费ROI', '3日付费率'];
+const CORE_CARD_METRICS = ['日均付费人数', '当日付费成本', '当日付费ROI', '日均连麦人数', '当日连麦成本', '3日付费成本', '3日付费ROI', '3日付费率', '首次付费占比'];
 const ADVANCED_FILTER_FIELDS = ['渠道', '代理', '版位', '操作系统', '账户命名', '优化目标', '出价方式', '账户ID', '账户名称', '广告组ID', '广告组名称'];
 const T0_OVERVIEW_ALL = '__ALL__';
 const DIAGNOSIS_DEFAULT_DIMENSIONS = ['渠道', '代理', '版位', '操作系统', '账户命名', '优化目标', '出价方式', '账户名称', '广告组名称'];
@@ -272,6 +272,16 @@ export default function App() {
       };
     });
   }, [t0OverviewRows, selectedDateRange, previousRange]);
+  const detailRows = useMemo(
+    () =>
+      rowsAfterGlobalFilters.filter((row) => {
+        const normalizedDate = normalizeExcelDate(row.日期);
+        if (!normalizedDate) return false;
+        if (!selectedDateRange) return true;
+        return normalizedDate >= selectedDateRange[0] && normalizedDate <= selectedDateRange[1];
+      }),
+    [rowsAfterGlobalFilters, selectedDateRange],
+  );
 
   const reviewDiagnosisMetric = useMemo(() => {
     if (T0_METRIC_KEYS.has(diagnosisMetric)) return diagnosisMetric;
@@ -503,8 +513,18 @@ export default function App() {
                     <Col key={item.key} xs={24} sm={12} md={8} lg={6}>
                       <Card size="small" title={item.metricKey}>
                         <Space direction="vertical" size={4}>
-                          <Typography.Text>当前：{formatMetricValue(item.current, item.type)}</Typography.Text>
-                          <Typography.Text type="secondary">上一周期：{formatMetricValue(item.previous, item.type)}</Typography.Text>
+                          <Typography.Text>
+                            当前：
+                            {item.type === 'number' && getMetricPrecision(item.metricKey) > 0 && item.current !== null
+                              ? item.current.toFixed(getMetricPrecision(item.metricKey))
+                              : formatMetricValue(item.current, item.type)}
+                          </Typography.Text>
+                          <Typography.Text type="secondary">
+                            上一周期：
+                            {item.type === 'number' && getMetricPrecision(item.metricKey) > 0 && item.previous !== null
+                              ? item.previous.toFixed(getMetricPrecision(item.metricKey))
+                              : formatMetricValue(item.previous, item.type)}
+                          </Typography.Text>
                           <Typography.Text type="secondary">环比：{formatMetricValue(item.changePct, 'percent')}</Typography.Text>
                           <Tag color={item.status === '变好' ? 'green' : item.status === '变差' ? 'red' : 'default'}>{item.status}</Tag>
                         </Space>
@@ -535,9 +555,9 @@ export default function App() {
               )}
             </Card>
 
-            <Card title={`明细表（聚合后：日期 + ${selectedDimension}）`} bordered={false}>
-              {aggregatedResult.rows.length > 0 ? (
-                <DataTable rows={aggregatedResult.rows} splitDimensionLabel={selectedDimension} metricLabel={selectedMetric} metricType={currentMetricType} />
+            <Card title={`明细表（${selectedDimension}）`} bordered={false}>
+              {detailRows.length > 0 ? (
+                <DataTable rows={detailRows} splitDimensionLabel={selectedDimension} />
               ) : (
                 <Empty description={emptyText} />
               )}
