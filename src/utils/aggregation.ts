@@ -215,7 +215,7 @@ export function aggregateRowsByDateAndDimension({ rows, splitDimension, metricKe
 
 export function formatMetricValue(value: number | null, metricType: ReturnType<typeof getMetricType>) {
   if (value === null || !Number.isFinite(value)) return '-';
-  if (metricType === 'percent') return `${(value * 100).toFixed(2)}%`;
+  if (metricType === 'percent' || metricType === 'roi') return `${(value * 100).toFixed(2)}%`;
   if (metricType === 'currency') return value.toFixed(2);
   return `${Math.round(value)}`;
 }

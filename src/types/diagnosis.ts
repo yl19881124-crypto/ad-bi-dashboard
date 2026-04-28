@@ -3,6 +3,9 @@ import type { MetricType, MetricTrendDirection } from '../config/metricConfig';
 export interface DiagnosisSummary {
   metricKey: string;
   metricType: MetricType;
+  metricMode: 'source' | 'daily_average_source' | 'formula' | 'unknown';
+  numeratorField: string;
+  denominatorField: string | null;
   currentValue: number | null;
   previousValue: number | null;
   changeValue: number | null;

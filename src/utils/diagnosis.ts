@@ -149,13 +149,16 @@ export function runDiagnosis(params: {
   const metricConfig = metricConfigMap.get(metricKey);
   const metricType = getMetricType(metricKey);
   const direction = getMetricTrendDirection(metricKey);
+  const summaryMetricMode = metricConfig?.mode ?? 'unknown';
+  const summaryNumeratorField = metricConfig?.mode === 'formula' ? metricConfig.numerator : metricConfig?.mode === 'source' || metricConfig?.mode === 'daily_average_source' ? metricConfig.sourceField : metricKey;
+  const summaryDenominatorField = metricConfig?.mode === 'formula' ? metricConfig.denominator : metricConfig?.mode === 'daily_average_source' ? '日期天数' : null;
 
   const fieldKeys = new Set(rows.flatMap((row) => Object.keys(row)));
   if (metricConfig?.mode === 'formula' && (!fieldKeys.has(metricConfig.numerator) || !fieldKeys.has(metricConfig.denominator))) {
     return {
       currentRange,
       previousRange,
-      summary: { metricKey, metricType, currentValue: null, previousValue: null, changeValue: null, changeRate: null, status: '持平', direction },
+      summary: { metricKey, metricType, metricMode: summaryMetricMode, numeratorField: summaryNumeratorField, denominatorField: summaryDenominatorField, currentValue: null, previousValue: null, changeValue: null, changeRate: null, status: '持平', direction },
       conclusion: '缺少必要字段，无法诊断该指标',
       conclusionLines: ['缺少必要字段，无法诊断该指标。', '建议补齐指标分子分母字段后重新诊断。', '可先查看聚合明细确认异常维度。'],
       dimensionResults: [],
@@ -176,7 +179,7 @@ export function runDiagnosis(params: {
     return {
       currentRange,
       previousRange,
-      summary: { metricKey, metricType, currentValue: null, previousValue: null, changeValue: null, changeRate: null, status: '持平', direction },
+      summary: { metricKey, metricType, metricMode: summaryMetricMode, numeratorField: summaryNumeratorField, denominatorField: summaryDenominatorField, currentValue: null, previousValue: null, changeValue: null, changeRate: null, status: '持平', direction },
       conclusion: !currentRows.length ? '当前筛选条件下暂无数据' : '暂无上一周期数据，无法计算环比',
       conclusionLines: [
         !currentRows.length ? '当前筛选条件下暂无可用数据，暂无法形成周期对比结论。' : '暂无上一周期数据，暂无法形成环比结论。',
@@ -191,18 +194,26 @@ export function runDiagnosis(params: {
 
   const sumByField = (targetRows: PeriodRow[], field: string) => targetRows.reduce((acc, row) => acc + toNumber(row[field]), 0);
 
-  const defaultNumerator = metricConfig?.mode === 'formula' ? metricConfig.numerator : metricKey;
-  const defaultDenominator = metricConfig?.mode === 'formula' ? metricConfig.denominator : '样本量';
+  const defaultNumerator = metricConfig?.mode === 'formula' ? metricConfig.numerator : metricConfig?.sourceField ?? metricKey;
+  const defaultDenominator = metricConfig?.mode === 'formula' ? metricConfig.denominator : '日期天数';
 
   const calcMetric = (numerator: number, denominator: number) => {
-    if (metricConfig?.mode === 'formula') return denominator > 0 ? numerator / denominator : null;
+    if (metricConfig?.mode === 'formula' || metricConfig?.mode === 'daily_average_source') return denominator > 0 ? numerator / denominator : null;
     return numerator;
   };
 
   const totalNumeratorCurrent = sumByField(currentRows, defaultNumerator);
   const totalNumeratorPrevious = sumByField(previousRows, defaultNumerator);
-  const totalDenominatorCurrent = metricConfig?.mode === 'formula' ? sumByField(currentRows, defaultDenominator) : currentRows.length;
-  const totalDenominatorPrevious = metricConfig?.mode === 'formula' ? sumByField(previousRows, defaultDenominator) : previousRows.length;
+  const totalDenominatorCurrent = metricConfig?.mode === 'formula'
+    ? sumByField(currentRows, defaultDenominator)
+    : metricConfig?.mode === 'daily_average_source'
+      ? new Set(currentRows.map((row) => row.__date).filter(Boolean)).size
+      : currentRows.length;
+  const totalDenominatorPrevious = metricConfig?.mode === 'formula'
+    ? sumByField(previousRows, defaultDenominator)
+    : metricConfig?.mode === 'daily_average_source'
+      ? new Set(previousRows.map((row) => row.__date).filter(Boolean)).size
+      : previousRows.length;
 
   const currentValue = calcMetric(totalNumeratorCurrent, totalDenominatorCurrent);
   const previousValue = calcMetric(totalNumeratorPrevious, totalDenominatorPrevious);
@@ -217,18 +228,20 @@ export function runDiagnosis(params: {
     targetPreviousRows: PeriodRow[],
     dimension: string,
   ) => {
-    const grouped = new Map<string, { nc: number; np: number; dc: number; dp: number }>();
+    const grouped = new Map<string, { nc: number; np: number; dc: number; dp: number; currentDays: Set<string>; previousDays: Set<string> }>();
 
     const addRow = (row: PeriodRow, isCurrent: boolean) => {
       const key = row[dimension] === null || row[dimension] === undefined || String(row[dimension]).trim() === '' ? '未知' : String(row[dimension]);
-      if (!grouped.has(key)) grouped.set(key, { nc: 0, np: 0, dc: 0, dp: 0 });
+      if (!grouped.has(key)) grouped.set(key, { nc: 0, np: 0, dc: 0, dp: 0, currentDays: new Set<string>(), previousDays: new Set<string>() });
       const item = grouped.get(key)!;
       if (isCurrent) {
         item.nc += toNumber(row[defaultNumerator]);
-        item.dc += metricConfig?.mode === 'formula' ? toNumber(row[defaultDenominator]) : 1;
+        if (metricConfig?.mode === 'formula') item.dc += toNumber(row[defaultDenominator]);
+        if (metricConfig?.mode === 'daily_average_source' && row.__date) item.currentDays.add(row.__date);
       } else {
         item.np += toNumber(row[defaultNumerator]);
-        item.dp += metricConfig?.mode === 'formula' ? toNumber(row[defaultDenominator]) : 1;
+        if (metricConfig?.mode === 'formula') item.dp += toNumber(row[defaultDenominator]);
+        if (metricConfig?.mode === 'daily_average_source' && row.__date) item.previousDays.add(row.__date);
       }
     };
 
@@ -236,10 +249,12 @@ export function runDiagnosis(params: {
     targetPreviousRows.forEach((row) => addRow(row, false));
 
     const allRows = Array.from(grouped.entries()).map(([dimensionValue, item]) => {
-      const currentMetric = calcMetric(item.nc, item.dc);
-      const previousMetric = calcMetric(item.np, item.dp);
+      const denominatorCurrent = metricConfig?.mode === 'daily_average_source' ? item.currentDays.size : item.dc;
+      const denominatorPrevious = metricConfig?.mode === 'daily_average_source' ? item.previousDays.size : item.dp;
+      const currentMetric = calcMetric(item.nc, denominatorCurrent);
+      const previousMetric = calcMetric(item.np, denominatorPrevious);
       const metricDelta = currentMetric !== null && previousMetric !== null ? currentMetric - previousMetric : 0;
-      const sampleWarning = item.dp < SMALL_SAMPLE_THRESHOLD || item.dc < SMALL_SAMPLE_THRESHOLD;
+      const sampleWarning = denominatorPrevious < SMALL_SAMPLE_THRESHOLD || denominatorCurrent < SMALL_SAMPLE_THRESHOLD;
       return {
         key: `${dimension}-${dimensionValue}`,
         dimensionValue,
@@ -248,8 +263,8 @@ export function runDiagnosis(params: {
         changeRate: previousMetric !== null && previousMetric !== 0 && currentMetric !== null ? (currentMetric - previousMetric) / previousMetric : null,
         numeratorCurrent: item.nc,
         numeratorPrevious: item.np,
-        denominatorCurrent: item.dc,
-        denominatorPrevious: item.dp,
+        denominatorCurrent,
+        denominatorPrevious,
         sampleWarning,
         metricDelta,
       };
@@ -404,7 +419,7 @@ export function runDiagnosis(params: {
   return {
     currentRange,
     previousRange,
-    summary: { metricKey, metricType, currentValue, previousValue, changeValue, changeRate, status, direction },
+    summary: { metricKey, metricType, metricMode: summaryMetricMode, numeratorField: summaryNumeratorField, denominatorField: summaryDenominatorField, currentValue, previousValue, changeValue, changeRate, status, direction },
     conclusion,
     conclusionLines,
     dimensionResults,

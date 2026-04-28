@@ -1,6 +1,6 @@
 import type { FieldTag } from '../types';
 
-export type MetricType = 'number' | 'currency' | 'percent';
+export type MetricType = 'number' | 'currency' | 'percent' | 'roi';
 export type MetricTrendDirection = 'higher_better' | 'lower_better';
 
 interface MetricBase {
@@ -34,11 +34,11 @@ export const T0_METRIC_CONFIGS: MetricConfig[] = [
   { key: '日均付费人数', name: '日均付费人数', tag: 'T0', type: 'number', mode: 'daily_average_source', sourceField: '当日付费人数' },
   { key: '当日连麦人数', name: '当日连麦人数', tag: 'T0', type: 'number', mode: 'source', sourceField: '当日连麦人数', aggregation: 'sum' },
   { key: '日均连麦人数', name: '日均连麦人数', tag: 'T0', type: 'number', mode: 'daily_average_source', sourceField: '当日连麦人数' },
-  { key: '当日付费ROI', name: '当日付费ROI', tag: 'T0', type: 'percent', mode: 'formula', numerator: '当日付费金额(元)', denominator: '实际消耗(元)' },
+  { key: '当日付费ROI', name: '当日付费ROI', tag: 'T0', type: 'roi', mode: 'formula', numerator: '当日付费金额(元)', denominator: '实际消耗(元)' },
   { key: '当日付费成本', name: '当日付费成本', tag: 'T0', type: 'currency', mode: 'formula', numerator: '实际消耗(元)', denominator: '当日付费人数' },
   { key: '当日连麦成本', name: '当日连麦成本', tag: 'T0', type: 'currency', mode: 'formula', numerator: '实际消耗(元)', denominator: '当日连麦人数' },
   { key: '3日付费成本', name: '3日付费成本', tag: 'T0', type: 'currency', mode: 'formula', numerator: '实际消耗(元)', denominator: '3日内付费人数' },
-  { key: '3日付费ROI', name: '3日付费ROI', tag: 'T0', type: 'percent', mode: 'formula', numerator: '3日内付费金额(元)', denominator: '实际消耗(元)' },
+  { key: '3日付费ROI', name: '3日付费ROI', tag: 'T0', type: 'roi', mode: 'formula', numerator: '3日内付费金额(元)', denominator: '实际消耗(元)' },
   { key: '3日付费率', name: '3日付费率', tag: 'T0', type: 'percent', mode: 'formula', numerator: '3日内付费人数', denominator: '注册_登录人数' },
   { key: '落地页到达率', name: '落地页到达率', tag: 'T0', type: 'percent', mode: 'formula', numerator: '连麦落地页到达人数', denominator: '注册_登录人数' },
   { key: '登陆➡️直播间进入率', name: '登陆➡️直播间进入率', tag: 'T0', type: 'percent', mode: 'formula', numerator: '进入直播间人数', denominator: '注册_登录人数' },
@@ -88,4 +88,11 @@ export function getMetricTrendDirection(metricKey: string): MetricTrendDirection
     return 'lower_better';
   }
   return null;
+}
+
+export function getMetricDirectionText(metricKey: string): '越高越好' | '越低越好' | '-' {
+  const direction = getMetricTrendDirection(metricKey);
+  if (direction === 'higher_better') return '越高越好';
+  if (direction === 'lower_better') return '越低越好';
+  return '-';
 }
