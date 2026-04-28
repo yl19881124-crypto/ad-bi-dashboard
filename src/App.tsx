@@ -41,7 +41,7 @@ const DEFAULT_SHEET_NAME = '分账户底表';
 const CORE_CARD_METRICS = ['当日付费人数', '当日付费成本', '当日付费ROI', '3日付费成本', '3日付费ROI', '3日付费率'];
 const ADVANCED_FILTER_FIELDS = ['渠道', '代理', '版位', '操作系统', '账户命名', '优化目标', '出价方式', '账户ID', '账户名称', '广告组ID', '广告组名称'];
 const T0_OVERVIEW_ALL = '__ALL__';
-const DIAGNOSIS_DEFAULT_DIMENSIONS = ['渠道', '代理', '版位', '操作系统', '账户命名', '优化目标', '出价方式', '广告组名称'];
+const DIAGNOSIS_DEFAULT_DIMENSIONS = ['渠道', '代理', '版位', '操作系统', '账户命名', '广告组名称'];
 
 const SCENARIOS = [
   { key: '整体付费趋势', name: '整体付费趋势', dimension: '渠道', metric: '当日付费人数' },
@@ -235,14 +235,18 @@ export default function App() {
     [filterOptions],
   );
   const diagnosisResult: DiagnosisResult | null = useMemo(
-    () =>
+    () => {
+      if (!hasUploadedData || !selectedDateRange) return null;
+      return (
       runDiagnosis({
         rows: t0OverviewRows,
         metricKey: diagnosisMetric,
         currentRange: selectedDateRange,
         dimensions: diagnosisDimensions,
-      }),
-    [t0OverviewRows, diagnosisMetric, selectedDateRange, diagnosisDimensions],
+      })
+      );
+    },
+    [hasUploadedData, t0OverviewRows, diagnosisMetric, selectedDateRange, diagnosisDimensions],
   );
 
   const overviewCards = useMemo(() => {
@@ -346,7 +350,26 @@ export default function App() {
               onClearFilters={() => setSelectedFilters({})}
             />
 
-            <Card bordered={false} title="T0 核心指标概览">
+            <Card
+              bordered={false}
+              title={
+                <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                  <span>T0 核心指标概览</span>
+                  <Button
+                    type="primary"
+                    onClick={() => {
+                      if (!hasUploadedData) message.warning('请先上传 Excel 数据');
+                      const defaultMetric = T0_METRIC_KEYS.has(selectedMetric) ? selectedMetric : '当日付费成本';
+                      setDiagnosisMetric(defaultMetric);
+                      setDiagnosisDimensions(diagnosisAvailableDimensions);
+                      setDiagnosisOpen(true);
+                    }}
+                  >
+                    诊断 T0 指标
+                  </Button>
+                </Space>
+              }
+            >
               <Space direction="vertical" size="small" style={{ width: '100%', marginBottom: 12 }}>
                 <Typography.Text type="secondary">当前范围：{selectedDateRange ? `${selectedDateRange[0]} 至 ${selectedDateRange[1]}` : '全部日期'}</Typography.Text>
                 <Typography.Text type="secondary">全局筛选：{globalFilterSummary}</Typography.Text>
@@ -393,19 +416,6 @@ export default function App() {
                 )}
               </Space>
               <div style={{ overflowX: 'auto' }}>
-                <Space style={{ marginBottom: 12 }}>
-                  <Button
-                    type="primary"
-                    onClick={() => {
-                      const defaultMetric = T0_METRIC_KEYS.has(selectedMetric) ? selectedMetric : '当日付费成本';
-                      setDiagnosisMetric(defaultMetric);
-                      setDiagnosisDimensions(diagnosisAvailableDimensions);
-                      setDiagnosisOpen(true);
-                    }}
-                  >
-                    诊断 T0 指标
-                  </Button>
-                </Space>
                 <Row gutter={[12, 12]} wrap>
                   {overviewCards.map((item) => (
                     <Col key={item.key} xs={24} sm={12} md={8} lg={6}>
@@ -496,6 +506,13 @@ export default function App() {
         currentRangeText={selectedDateRange ? `${selectedDateRange[0]} 至 ${selectedDateRange[1]}` : '-'}
         previousRangeText={previousRange ? `${previousRange[0]} 至 ${previousRange[1]}` : '-'}
         result={diagnosisResult}
+        emptyMessage="请先上传 Excel 数据并选择日期范围。"
+        debugInfo={{
+          rawRowCount: hasUploadedData ? rows.length : 0,
+          filteredRowCount: hasUploadedData ? t0OverviewRows.length : 0,
+          diagnosisMetric,
+          dimensionCount: diagnosisDimensions.length,
+        }}
       />
     </Layout>
   );
