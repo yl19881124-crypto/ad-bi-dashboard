@@ -21,15 +21,38 @@ export interface DiagnosisDimensionRow {
   numeratorPrevious: number;
   denominatorCurrent: number;
   denominatorPrevious: number;
+  contribution: number | null;
   reason: string;
   action: string;
   sampleWarning: boolean;
   impactScore: number;
+  secondaryResults?: DiagnosisSecondaryDimensionResult[];
 }
 
 export interface DiagnosisDimensionResult {
   dimension: string;
   rows: DiagnosisDimensionRow[];
+}
+
+export interface DiagnosisSecondaryRow {
+  key: string;
+  dimensionValue: string;
+  currentMetric: number | null;
+  previousMetric: number | null;
+  changeRate: number | null;
+  numeratorCurrent: number;
+  numeratorPrevious: number;
+  denominatorCurrent: number;
+  denominatorPrevious: number;
+  contribution: number | null;
+  reason: string;
+  sampleWarning: boolean;
+  impactScore: number;
+}
+
+export interface DiagnosisSecondaryDimensionResult {
+  dimension: string;
+  rows: DiagnosisSecondaryRow[];
 }
 
 export interface DiagnosisResult {
