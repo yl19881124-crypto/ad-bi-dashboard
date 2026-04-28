@@ -34,6 +34,10 @@ function pickPrimaryMetric(overviewItems: ReviewOverviewItem[], selectedMetric: 
 }
 
 function buildCoreConclusions(overviewItems: ReviewOverviewItem[], diagnosis: DiagnosisResult | null): string[] {
+  if (diagnosis && diagnosis.conclusionLines && diagnosis.conclusionLines.length >= 3 && !diagnosis.error) {
+    return diagnosis.conclusionLines.slice(0, 6);
+  }
+
   const sorted = [...overviewItems].sort((a, b) => {
     if (statusPriority(a) !== statusPriority(b)) return statusPriority(b) - statusPriority(a);
     return Math.abs(b.changePct ?? 0) - Math.abs(a.changePct ?? 0);

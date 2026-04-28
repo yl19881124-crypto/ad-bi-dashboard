@@ -60,6 +60,7 @@ export interface DiagnosisResult {
   previousRange: [string, string];
   summary: DiagnosisSummary;
   conclusion: string;
+  conclusionLines: string[];
   dimensionResults: DiagnosisDimensionResult[];
   suggestions: string[];
   error?: string;

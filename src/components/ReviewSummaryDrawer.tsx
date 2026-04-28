@@ -33,7 +33,7 @@ export default function ReviewSummaryDrawer(props: Props) {
   ];
 
   return (
-    <Drawer title="投放数据复盘摘要" width={1080} open={open} onClose={onClose} destroyOnClose>
+    <Drawer title="投放数据复盘摘要" width={1080} open={open} onClose={onClose} destroyOnClose styles={{ body: { overflowY: 'auto' } }}>
       {!hasUploadedData ? (
         <Empty description="请先上传 Excel 数据后再生成复盘摘要。" />
       ) : !summary ? (
@@ -66,7 +66,9 @@ export default function ReviewSummaryDrawer(props: Props) {
                   <Card title="三、核心结论" size="small">
                     <ol style={{ margin: 0, paddingLeft: 18 }}>
                       {summary.coreConclusions.map((item) => (
-                        <li key={item}>{item}</li>
+                        <li key={item}>
+                          <Typography.Paragraph style={{ marginBottom: 8 }}>{item}</Typography.Paragraph>
+                        </li>
                       ))}
                     </ol>
                   </Card>
