@@ -27,14 +27,17 @@ import ConfigBar from './components/ConfigBar';
 import DataTable from './components/DataTable';
 import DiagnosisDrawer from './components/DiagnosisDrawer';
 import FieldPanel from './components/FieldPanel';
+import ReviewSummaryDrawer from './components/ReviewSummaryDrawer';
 import TrendChart from './components/TrendChart';
-import { getMetricTrendDirection, T0_METRIC_CONFIGS, T0_METRIC_KEYS, getMetricType } from './config/metricConfig';
+import { T0_METRIC_CONFIGS, T0_METRIC_KEYS, getMetricType } from './config/metricConfig';
 import { dimensionFields as defaultDimensions, metricFields as defaultMetrics, mockRows } from './mock/data';
 import type { DataRow, DimensionField, MetricField } from './types';
 import type { DiagnosisResult } from './types/diagnosis';
+import type { ReviewSummaryData } from './types/reviewSummary';
 import { aggregateRowsByDateAndDimension, calculateMetricByRange, filterRows, formatMetricValue, getFilterOptions } from './utils/aggregation';
 import { runDiagnosis } from './utils/diagnosis';
 import { normalizeExcelDate } from './utils/date';
+import { buildMarkdownFileName, generateReviewSummary, getOverviewStatus } from './utils/reviewSummary';
 
 const { Header, Sider, Content } = Layout;
 const DEFAULT_SHEET_NAME = '分账户底表';
@@ -160,6 +163,7 @@ export default function App() {
   const [diagnosisOpen, setDiagnosisOpen] = useState(false);
   const [diagnosisMetric, setDiagnosisMetric] = useState('当日付费人数');
   const [diagnosisDimensions, setDiagnosisDimensions] = useState<string[]>([]);
+  const [reviewOpen, setReviewOpen] = useState(false);
 
   const filterOptions = useMemo(() => getFilterOptions(rows, ADVANCED_FILTER_FIELDS), [rows]);
   const availableT0FilterFields = useMemo(
@@ -254,16 +258,8 @@ export default function App() {
       const current = calculateMetricByRange(t0OverviewRows, metricKey, selectedDateRange);
       const previous = calculateMetricByRange(t0OverviewRows, metricKey, previousRange);
       const changePct = current !== null && previous !== null && previous !== 0 ? (current - previous) / previous : null;
-      const direction = getMetricTrendDirection(metricKey);
 
-      let status = '持平';
-      if (changePct !== null) {
-        const epsilon = 0.0001;
-        if (Math.abs(changePct) <= epsilon) status = '持平';
-        else if (direction === 'higher_better') status = changePct > 0 ? '变好' : '变差';
-        else if (direction === 'lower_better') status = changePct < 0 ? '变好' : '变差';
-        else status = changePct > 0 ? '上升' : '下降';
-      }
+      const status = getOverviewStatus(metricKey, changePct);
 
       return {
         key: metricKey,
@@ -276,6 +272,90 @@ export default function App() {
       };
     });
   }, [t0OverviewRows, selectedDateRange, previousRange]);
+
+  const reviewDiagnosisMetric = useMemo(() => {
+    if (T0_METRIC_KEYS.has(diagnosisMetric)) return diagnosisMetric;
+    const worseItem = overviewCards
+      .filter((item) => item.status === '变差' && item.changePct !== null)
+      .sort((a, b) => Math.abs(b.changePct ?? 0) - Math.abs(a.changePct ?? 0))[0];
+    if (worseItem) return worseItem.metricKey;
+    if (T0_METRIC_KEYS.has(selectedMetric)) return selectedMetric;
+    return '当日付费人数';
+  }, [diagnosisMetric, overviewCards, selectedMetric]);
+
+  const reviewDiagnosisDimensions = useMemo(
+    () => (diagnosisDimensions.length > 0 ? diagnosisDimensions : diagnosisAvailableDimensions),
+    [diagnosisAvailableDimensions, diagnosisDimensions],
+  );
+
+  const reviewDiagnosisResult = useMemo(() => {
+    if (!hasUploadedData || !selectedDateRange) return null;
+    if (
+      diagnosisResult &&
+      diagnosisResult.summary.metricKey === reviewDiagnosisMetric &&
+      reviewDiagnosisDimensions.length === diagnosisDimensions.length
+    ) {
+      return diagnosisResult;
+    }
+    return runDiagnosis({
+      rows: t0OverviewRows,
+      metricKey: reviewDiagnosisMetric,
+      currentRange: selectedDateRange,
+      dimensions: reviewDiagnosisDimensions,
+    });
+  }, [
+    hasUploadedData,
+    selectedDateRange,
+    diagnosisResult,
+    reviewDiagnosisMetric,
+    reviewDiagnosisDimensions,
+    diagnosisDimensions.length,
+    t0OverviewRows,
+  ]);
+
+  const scenarioName = SCENARIOS.find((item) => item.key === selectedScenario)?.name ?? selectedScenario;
+  const dateText = selectedDateRange ? `${selectedDateRange[0]} ~ ${selectedDateRange[1]}` : '全部日期';
+  const emptyText = '暂无数据，请调整筛选条件';
+  const globalFilterSummary = useMemo(() => {
+    const activeItems = Object.entries(selectedFilters).filter(([, values]) => values.length > 0);
+    if (!activeItems.length) return '无';
+    return activeItems.map(([field, values]) => `${field} = ${values.join('、')}`).join('；');
+  }, [selectedFilters]);
+  const t0OverviewFilterSummary =
+    t0OverviewFilterField === T0_OVERVIEW_ALL || t0OverviewFilterValues.length === 0
+      ? '无'
+      : `${t0OverviewFilterField} = ${t0OverviewFilterValues.join('、')}`;
+
+  const reviewSummaryData: ReviewSummaryData | null = useMemo(() => {
+    if (!hasUploadedData) return null;
+    return generateReviewSummary({
+      context: {
+        dateRange: selectedDateRange,
+        scenario: scenarioName,
+        splitDimension: selectedDimension,
+        selectedMetric,
+        globalFilterSummary,
+        t0OverviewFilterSummary,
+        dataRowCount: rowsAfterGlobalFilters.length,
+        sheetName: parsedSheetName,
+      },
+      overviewItems: overviewCards,
+      diagnosisResult: reviewDiagnosisResult,
+      selectedMetric,
+    });
+  }, [
+    hasUploadedData,
+    selectedDateRange,
+    scenarioName,
+    selectedDimension,
+    selectedMetric,
+    globalFilterSummary,
+    t0OverviewFilterSummary,
+    rowsAfterGlobalFilters.length,
+    parsedSheetName,
+    overviewCards,
+    reviewDiagnosisResult,
+  ]);
 
   const trendChartKey = useMemo(
     () => JSON.stringify({ splitDimension: selectedDimension, metric: selectedMetric, dateRange: selectedDateRange, rowCount: aggregatedResult.rows.length }),
@@ -295,18 +375,6 @@ export default function App() {
 
   const previewRows = useMemo(() => rows.slice(0, 10).map((row, index) => ({ key: `${index}`, ...row })), [rows]);
   const currentMetricType = getMetricType(selectedMetric);
-  const scenarioName = SCENARIOS.find((item) => item.key === selectedScenario)?.name ?? selectedScenario;
-  const dateText = selectedDateRange ? `${selectedDateRange[0]} ~ ${selectedDateRange[1]}` : '全部日期';
-  const emptyText = '暂无数据，请调整筛选条件';
-  const globalFilterSummary = useMemo(() => {
-    const activeItems = Object.entries(selectedFilters).filter(([, values]) => values.length > 0);
-    if (!activeItems.length) return '无';
-    return activeItems.map(([field, values]) => `${field} = ${values.join('、')}`).join('；');
-  }, [selectedFilters]);
-  const t0OverviewFilterSummary =
-    t0OverviewFilterField === T0_OVERVIEW_ALL || t0OverviewFilterValues.length === 0
-      ? '无'
-      : `${t0OverviewFilterField} = ${t0OverviewFilterValues.join('、')}`;
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
@@ -317,7 +385,7 @@ export default function App() {
       <Layout>
         <Header className="app-header">
           <Space>
-            <Typography.Title level={4} style={{ margin: 0 }}>投放数据分析 BI 看板 v0.2.0</Typography.Title>
+            <Typography.Title level={4} style={{ margin: 0 }}>投放数据分析 BI 看板 v0.4.0</Typography.Title>
             <Upload {...uploadProps}>
               <Button type="primary" icon={<UploadOutlined />}>上传 Excel/CSV</Button>
             </Upload>
@@ -355,18 +423,29 @@ export default function App() {
               title={
                 <Space style={{ width: '100%', justifyContent: 'space-between' }}>
                   <span>T0 核心指标概览</span>
-                  <Button
-                    type="primary"
-                    onClick={() => {
-                      if (!hasUploadedData) message.warning('请先上传 Excel 数据');
-                      const defaultMetric = T0_METRIC_KEYS.has(selectedMetric) ? selectedMetric : '当日付费成本';
-                      setDiagnosisMetric(defaultMetric);
-                      setDiagnosisDimensions(diagnosisAvailableDimensions);
-                      setDiagnosisOpen(true);
-                    }}
-                  >
-                    诊断 T0 指标
-                  </Button>
+                  <Space>
+                    <Button
+                      type="primary"
+                      onClick={() => {
+                        if (!hasUploadedData) message.warning('请先上传 Excel 数据');
+                        setReviewOpen(true);
+                      }}
+                    >
+                      生成复盘摘要
+                    </Button>
+                    <Button
+                      type="primary"
+                      onClick={() => {
+                        if (!hasUploadedData) message.warning('请先上传 Excel 数据');
+                        const defaultMetric = T0_METRIC_KEYS.has(selectedMetric) ? selectedMetric : '当日付费成本';
+                        setDiagnosisMetric(defaultMetric);
+                        setDiagnosisDimensions(diagnosisAvailableDimensions);
+                        setDiagnosisOpen(true);
+                      }}
+                    >
+                      诊断 T0 指标
+                    </Button>
+                  </Space>
                 </Space>
               }
             >
@@ -512,6 +591,36 @@ export default function App() {
           filteredRowCount: hasUploadedData ? t0OverviewRows.length : 0,
           diagnosisMetric,
           dimensionCount: diagnosisDimensions.length,
+        }}
+      />
+      <ReviewSummaryDrawer
+        open={reviewOpen}
+        onClose={() => setReviewOpen(false)}
+        hasUploadedData={hasUploadedData}
+        summary={reviewSummaryData}
+        onCopyMarkdown={async () => {
+          if (!reviewSummaryData) return;
+          try {
+            await navigator.clipboard.writeText(reviewSummaryData.markdown);
+            message.success('已复制复盘摘要');
+          } catch {
+            message.warning('复制失败，请手动复制');
+          }
+        }}
+        onDownloadMarkdown={() => {
+          if (!reviewSummaryData) return;
+          try {
+            const blob = new Blob([reviewSummaryData.markdown], { type: 'text/markdown;charset=utf-8' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = buildMarkdownFileName(selectedDateRange);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(link.href);
+          } catch {
+            message.error('导出失败，请重试');
+          }
         }}
       />
     </Layout>
