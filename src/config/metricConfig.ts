@@ -1,6 +1,7 @@
 import type { FieldTag } from '../types';
 
 export type MetricType = 'number' | 'currency' | 'percent';
+export type MetricTrendDirection = 'higher_better' | 'lower_better';
 
 interface MetricBase {
   key: string;
@@ -40,9 +41,32 @@ export const T0_METRIC_CONFIGS: MetricConfig[] = [
 ];
 
 export const T0_METRIC_KEYS = new Set(T0_METRIC_CONFIGS.map((metric) => metric.key));
-
 export const metricConfigMap = new Map<string, MetricConfig>(T0_METRIC_CONFIGS.map((metric) => [metric.key, metric]));
+
+const HIGHER_BETTER = new Set([
+  '当日付费人数',
+  '当日付费ROI',
+  '3日付费ROI',
+  '3日付费率',
+  '落地页到达率',
+  '登陆➡️直播间进入率',
+  '直播间➡️当日连麦率',
+  '当日连麦➡️付费连麦转化率',
+  '当日付费连麦用户占比',
+]);
+
+const LOWER_BETTER = new Set(['当日付费成本', '3日付费成本']);
 
 export function getMetricType(metricKey: string): MetricType {
   return metricConfigMap.get(metricKey)?.type ?? 'number';
+}
+
+export function getMetricTrendDirection(metricKey: string): MetricTrendDirection | null {
+  if (HIGHER_BETTER.has(metricKey)) {
+    return 'higher_better';
+  }
+  if (LOWER_BETTER.has(metricKey)) {
+    return 'lower_better';
+  }
+  return null;
 }
