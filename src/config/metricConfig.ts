@@ -16,17 +16,24 @@ interface SourceMetricConfig extends MetricBase {
   aggregation: 'sum';
 }
 
+interface DailyAverageMetricConfig extends MetricBase {
+  mode: 'daily_average_source';
+  sourceField: string;
+}
+
 interface FormulaMetricConfig extends MetricBase {
   mode: 'formula';
   numerator: string;
   denominator: string;
 }
 
-export type MetricConfig = SourceMetricConfig | FormulaMetricConfig;
+export type MetricConfig = SourceMetricConfig | DailyAverageMetricConfig | FormulaMetricConfig;
 
 export const T0_METRIC_CONFIGS: MetricConfig[] = [
   { key: '当日付费人数', name: '当日付费人数', tag: 'T0', type: 'number', mode: 'source', sourceField: '当日付费人数', aggregation: 'sum' },
+  { key: '日均付费人数', name: '日均付费人数', tag: 'T0', type: 'number', mode: 'daily_average_source', sourceField: '当日付费人数' },
   { key: '当日连麦人数', name: '当日连麦人数', tag: 'T0', type: 'number', mode: 'source', sourceField: '当日连麦人数', aggregation: 'sum' },
+  { key: '日均连麦人数', name: '日均连麦人数', tag: 'T0', type: 'number', mode: 'daily_average_source', sourceField: '当日连麦人数' },
   { key: '当日付费ROI', name: '当日付费ROI', tag: 'T0', type: 'percent', mode: 'formula', numerator: '当日付费金额(元)', denominator: '实际消耗(元)' },
   { key: '当日付费成本', name: '当日付费成本', tag: 'T0', type: 'currency', mode: 'formula', numerator: '实际消耗(元)', denominator: '当日付费人数' },
   { key: '当日连麦成本', name: '当日连麦成本', tag: 'T0', type: 'currency', mode: 'formula', numerator: '实际消耗(元)', denominator: '当日连麦人数' },
@@ -40,6 +47,7 @@ export const T0_METRIC_CONFIGS: MetricConfig[] = [
   { key: '直播间➡️当日连麦率', name: '直播间➡️当日连麦率', tag: 'T0', type: 'percent', mode: 'formula', numerator: '当日连麦人数', denominator: '进入直播间人数' },
   { key: '当日连麦➡️付费连麦转化率', name: '当日连麦➡️付费连麦转化率', tag: 'T0', type: 'percent', mode: 'formula', numerator: '首日付费连麦人数', denominator: '当日连麦人数' },
   { key: '当日付费连麦用户占比', name: '当日付费连麦用户占比', tag: 'T0', type: 'percent', mode: 'formula', numerator: '首日付费连麦人数', denominator: '当日付费人数' },
+  { key: '首次付费占比', name: '首次付费占比', tag: 'T0', type: 'percent', mode: 'formula', numerator: '当日首次付费人数', denominator: '当日付费次数' },
 ];
 
 export const T0_METRIC_KEYS = new Set(T0_METRIC_CONFIGS.map((metric) => metric.key));
@@ -47,7 +55,9 @@ export const metricConfigMap = new Map<string, MetricConfig>(T0_METRIC_CONFIGS.m
 
 const HIGHER_BETTER = new Set([
   '当日付费人数',
+  '日均付费人数',
   '当日连麦人数',
+  '日均连麦人数',
   '当日付费ROI',
   '3日付费ROI',
   '3日付费率',
@@ -56,12 +66,18 @@ const HIGHER_BETTER = new Set([
   '直播间➡️当日连麦率',
   '当日连麦➡️付费连麦转化率',
   '当日付费连麦用户占比',
+  '首次付费占比',
 ]);
 
 const LOWER_BETTER = new Set(['当日付费成本', '当日连麦成本', '3日付费成本']);
 
 export function getMetricType(metricKey: string): MetricType {
   return metricConfigMap.get(metricKey)?.type ?? 'number';
+}
+
+export function getMetricPrecision(metricKey: string): number {
+  if (metricKey === '日均付费人数' || metricKey === '日均连麦人数') return 1;
+  return 0;
 }
 
 export function getMetricTrendDirection(metricKey: string): MetricTrendDirection | null {
