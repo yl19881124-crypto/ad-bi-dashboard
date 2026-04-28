@@ -26,6 +26,7 @@ import * as XLSX from 'xlsx';
 import ConfigBar from './components/ConfigBar';
 import DataTable from './components/DataTable';
 import DiagnosisDrawer from './components/DiagnosisDrawer';
+import AnomalyRanking from './components/AnomalyRanking';
 import FieldPanel from './components/FieldPanel';
 import ReviewSummaryDrawer from './components/ReviewSummaryDrawer';
 import TrendChart from './components/TrendChart';
@@ -408,7 +409,7 @@ export default function App() {
       <Layout>
         <Header className="app-header">
           <Space>
-            <Typography.Title level={4} style={{ margin: 0 }}>投放数据分析 BI 看板 v0.4.0</Typography.Title>
+            <Typography.Title level={4} style={{ margin: 0 }}>投放数据分析 BI 看板 v0.5.0</Typography.Title>
             <Upload {...uploadProps}>
               <Button type="primary" icon={<UploadOutlined />}>上传 Excel/CSV</Button>
             </Upload>
@@ -607,6 +608,13 @@ export default function App() {
                 <Empty description={emptyText} />
               )}
             </Card>
+
+            <AnomalyRanking
+              rows={rowsAfterGlobalFilters}
+              dateRange={selectedDateRange}
+              availableFields={Array.from(new Set([...dimensionFields.map((item) => item.key), ...metricFields.map((item) => item.key)]))}
+              hasUploadedData={hasUploadedData}
+            />
 
             <Card title="上传解析结果" bordered={false}>
               <Space direction="vertical" size="middle" style={{ width: '100%' }}>
